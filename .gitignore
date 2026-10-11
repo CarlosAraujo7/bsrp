@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+
+# Q-tables pickle (~110 MB, regeneráveis; hashes em results/MANIFEST_pkl.sha256)
+results/*.pkl
+
+# Dados brutos coletados (Tembici): licença de redistribuição NÃO verificada -> não versionar
+data/
+
+# Temporários
+*.tmp
+.venv/

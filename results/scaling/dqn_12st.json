@@ -1,0 +1,18 @@
+{
+  "n_stations": 12,
+  "n_episodes": 9500,
+  "multiseed": {
+    "123": {
+      "reward": -3.3,
+      "std": 4.0
+    },
+    "456": {
+      "reward": -2.8,
+      "std": 4.4
+    },
+    "789": {
+      "reward": -3.5,
+      "std": 5.7
+    }
+  }
+}

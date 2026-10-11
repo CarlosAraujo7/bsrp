@@ -1,0 +1,13 @@
+name,cluster,cluster_label,volume_jan2024,lat,lon,capacity,dep_peak_h,arr_peak_h
+Forsyth St & Grand St,0,Misto-Tarde,2481,40.71779817737835,-73.99316132068634,63,18.0,17.5
+Cleveland Pl & Spring St,0,Misto-Tarde,2474,40.722103786686034,-73.99724900722504,33,18.0,17.5
+University Pl & E 14 St,1,Alto-Volume,3510,40.734814,-73.992085,61,18.0,18.0
+E 17 St & Broadway,1,Alto-Volume,3122,40.73704984,-73.99009296,78,18.0,18.0
+E 1 St & 1 Ave,2,Residencial,2384,40.72335597960796,-73.98864984512329,75,8.5,18.0
+W 44 St & 11 Ave,2,Residencial,2296,40.762009,-73.996975,79,8.5,18.0
+E 43 St & Madison Ave,3,Comercial,2799,40.75354681867074,-73.97896572947502,56,17.0,8.5
+Great Jones St,3,Comercial,2373,40.72743423,-73.99379025,23,17.0,8.5
+8 Ave & W 38 St,1,Alto-Volume,2904,40.75461,-73.99177,65,18.0,18.0
+Amsterdam Ave & W 73 St,1,Alto-Volume,2855,40.77966809007312,-73.98093044757842,55,18.0,18.0
+W 43 St & 10 Ave,0,Misto-Tarde,2466,40.76009437,-73.99461843,117,18.0,17.5
+W 27 St & 6 Ave,0,Misto-Tarde,2351,40.74526,-73.99062,66,18.0,17.5

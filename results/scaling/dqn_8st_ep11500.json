@@ -1,0 +1,52 @@
+{
+  "n_stations": 8,
+  "n_episodes": 11500,
+  "multiseed": {
+    "123": {
+      "reward": -7.26,
+      "std": 7.032240041409281,
+      "unmet": 0.0
+    },
+    "456": {
+      "reward": -6.54,
+      "std": 6.317309553916129,
+      "unmet": 0.0
+    },
+    "789": {
+      "reward": -7.48,
+      "std": 6.796293107275465,
+      "unmet": 0.0
+    }
+  },
+  "history": [
+    {
+      "ep": 10000,
+      "eval_r": -6.1,
+      "eval_u": 0.0,
+      "eps": 0.05,
+      "elapsed": 3.7
+    },
+    {
+      "ep": 10500,
+      "eval_r": -10.55,
+      "eval_u": 0.0,
+      "eps": 0.05,
+      "elapsed": 7.8
+    },
+    {
+      "ep": 11000,
+      "eval_r": -6.4,
+      "eval_u": 0.0,
+      "eps": 0.05,
+      "elapsed": 11.8
+    },
+    {
+      "ep": 11500,
+      "eval_r": -7.95,
+      "eval_u": 0.0,
+      "eps": 0.05,
+      "elapsed": 15.8
+    }
+  ],
+  "weights_path": "/sessions/sharp-optimistic-einstein/mnt/BSRP ENIAC/scripts/../results/scaling/dqn_8st_ep11500.npz"
+}

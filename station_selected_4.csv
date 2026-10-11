@@ -1,0 +1,5 @@
+name,cluster,cluster_label,volume_jan2024,lat,lon,capacity,dep_peak_h,arr_peak_h
+Forsyth St & Grand St,0,Misto-Tarde,2481,40.71779817737835,-73.99316132068634,63,18.0,17.5
+Cleveland Pl & Spring St,0,Misto-Tarde,2474,40.722103786686034,-73.99724900722504,33,18.0,17.5
+E 1 St & 1 Ave,1,Residencial,2384,40.72335597960796,-73.98864984512329,75,8.5,18.0
+W 44 St & 11 Ave,1,Residencial,2296,40.762009,-73.996975,79,8.5,18.0
