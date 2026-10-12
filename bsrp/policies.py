@@ -170,6 +170,12 @@ def greedy_grid():
     return [GreedyFamily(lo, hi, d) for lo, hi, d in itertools.product((0.25, 0.35, 0.45), (0.6, 0.75, 0.9), (5, 10))]
 
 
+def greedy_grid2():
+    """Grade estendida (DESVIOS.md 2026-10-12): o ótimo da grade 1 caiu na borda (hi=0,6; lo=0,25)."""
+    return [GreedyFamily(lo, hi, d) for lo, hi, d in
+            itertools.product((0.15, 0.25, 0.35, 0.45), (0.45, 0.5, 0.55, 0.6, 0.7, 0.8, 0.9), (5, 10)) if hi > lo]
+
+
 def threshold_grid():
     return [ThresholdFamily(t, lo, hi, d, w) for t, lo, hi, d, w in
             itertools.product((0.4, 0.5, 0.6), (0.25, 0.35, 0.45), (0.6, 0.75, 0.9), (5, 10), (0.0, 0.1, 0.3))]

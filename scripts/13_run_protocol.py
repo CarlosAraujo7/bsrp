@@ -89,12 +89,17 @@ def cmd_heuristics(a):
         env = E.BSRPEnv(inst)
         refs = [P.Stay(), P.RandomPolicy(np.random.default_rng(1)), P.LegacyGreedy(), P.LegacyThreshold(0.5)]
         cal = {}
-        for fam, grid in (("greedy_cal", P.greedy_grid()), ("threshold_cal", P.threshold_grid())):
+        if a.only_greedy2:      # reexecução só da grade estendida da gulosa (DESVIOS.md)
+            refs = []
+            fams = (("greedy_cal2", P.greedy_grid2()),)
+        else:
+            fams = (("greedy_cal", P.greedy_grid()), ("threshold_cal", P.threshold_grid()))
+        for fam, grid in fams:
             t0 = time.time()
             best, table = P.calibrate(env, grid, sc["val"])
             cal[fam] = (best, table)
             print(f"[{inst.name}] {fam}: melhor em val = {best.name}  ({time.time()-t0:.0f}s, {len(grid)} configs)", flush=True)
-        labeled = [(p.name, p) for p in refs] + [("greedy_cal", cal["greedy_cal"][0]), ("threshold_cal", cal["threshold_cal"][0])]
+        labeled = [(p.name, p) for p in refs] + [(f, cal[f][0]) for f in cal]
         for fam, pol in labeled:
             t0 = time.time()
             r = E.evaluate(env, pol, sc["test"])
@@ -133,6 +138,8 @@ def main():
         p.add_argument("--instances", type=int, nargs="+", default=[4])
         p.add_argument("--scale", type=float, default=3.5)
         p.add_argument("--out", default=str(ROOT / "runs" / f"{name}.jsonl"))
+        if name == "heuristics":
+            p.add_argument("--only-greedy2", action="store_true", help="só a grade estendida da gulosa")
         if name == "learners":
             p.add_argument("--methods", nargs="+", default=["tab_cluster", "tab_station", "linear", "dqn"])
             p.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
