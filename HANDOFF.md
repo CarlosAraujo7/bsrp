@@ -14,7 +14,7 @@ Rebalanceamento com **1 veículo** (capacidade 20), 32 passos de 30 min (06h–2
 Mapa: `01_escopo.md … 04_experimentos.md` · `scripts/{01_download,02_preprocess,03_collect_tembici_gbfs,04_simulator,05_qlearning,06_improved_qlearning,07_dqn,08_scaling,09_reinforce,10_baselines}` · `results/{qtable*.pkl,dqn_*.npz,scaling/,baselines/}` · `demand_profiles_*`, `station_selected_*`.
 
 ## 2. Estado real
-Experimentos prontos; **não há `paper/`**; sem git. Dados Tembici **não coletados** (script existe, sem dados). `results/reinforce/` **não existe** (REINFORCE sem resultados). `baselines_8st.json` e `baselines_12st.json` só têm *threshold* (o *rollout* não terminou).
+Experimentos prontos; **não há `paper/`**. *(Atualizado em 2026-10-12: git iniciado; coleta Tembici em andamento desde 2026-10-11 — ver §9b.)* `results/reinforce/` **não existe** (REINFORCE sem resultados). `baselines_8st.json` e `baselines_12st.json` só têm *threshold* (o *rollout* não terminou).
 
 ## 3. Achados críticos (verificados)
 
@@ -30,17 +30,19 @@ Experimentos prontos; **não há `paper/`**; sem git. Dados Tembici **não colet
 
 | Estações | Gulosa | DQN | Q-learning (cluster) | Q-learning (por estação) |
 |---|---|---|---|---|
-| 4 | −1,98 | −3,49 | −7,13 | **−3,73** |
-| 8 | −3,80 | −6,76 | −13,92 | — |
-| 12 | −5,57 | **−3,20** | −12,23 | — |
+| 4 | −1,98 ⚠ | −3,49 | −7,13 (10k ep) | −3,73 (**18k** ep) |
+| 8 | −3,80 ⚠ | −6,76 | −13,92 (3,5k ep) | — |
+| 12 | −5,57 ⚠ | **−3,20** | −12,23 (20k ep) | — |
 
-Gulosa vence o DQN em 4 e 8 estações; só em 12 o DQN vence. Em 4 estações o **tabular com estado por estação empata com o DQN**. O Q-learning "original" usa estado agregado por cluster, que não distingue qual estação do cluster está vazia embora as ações escolham estações — é um adversário construído para perder.
+> ⚠ **Corrigido em 2026-10-12:** os valores de gulosa/aleatória **não estão em nenhum JSON** (só stdout); a única gulosa salva é −4,60 (12 est., sem. 123). O −3,73 é com 18k ep; **com orçamento igual (10k)** o `ql_control.json` dá por-estação −5,35 × cluster −6,15 (Δ = 0,80, EP ≈ 0,54 só de simulador). Threshold salva: 4 est. −2,08; 8 est. −5,26; 12 est. −6,97. Ver `04_experimentos.md` §3.
 
-**B6. Narrativas conflitantes no mesmo documento** [leitura]: §4 atribui a falha à complexidade amostral (0,33 atualizações/par; "≈600k episódios"); §12.6 à *aliasing* por cluster; §10.2 interpreta "corrigir aliasing de ações piorou" como benefício do espaço variável (explicação não testada). O controle §12.6 varia ao mesmo tempo resolução, tamanho de espaço e episódios (20k × 18k).
+Gulosa vence o DQN em 4 e 8 estações; só em 12 o DQN vence. ~~Em 4 estações o tabular com estado por estação empata com o DQN~~ → **não demonstrado** (orçamentos 18k × 5k ep; sem TOST; 1 semente). O Q-learning "original" usa estado agregado por cluster, que não distingue qual estação do cluster está vazia embora as ações escolham estações — é um adversário construído para perder.
+
+**B6. Narrativas conflitantes no mesmo documento** [leitura]: §4 atribui a falha à complexidade amostral (0,33 atualizações/par; "≈600k episódios"); §12.6 à *aliasing* por cluster; §10.2 interpreta "corrigir aliasing de ações piorou" como benefício do espaço variável (explicação não testada). O controle §12.6 varia ao mesmo tempo resolução, tamanho de espaço e episódios (o JSON registra 10k × 18k, não 20k × 18k; e em 4 estações os dois espaços têm o mesmo tamanho, 8.192).
 
 **B7. Baselines incompletos e trabalho não documentado** [dados]: *rollout* só em 4 estações; REINFORCE sem resultados e ausente de `04_experimentos.md`; a *threshold* é pior que a gulosa em 12 estações (−6,97 × −5,57).
 
-**B8. Números inconsistentes no texto**: aleatória = −15,6 / −14,5 / −14,21 conforme a tabela; "+64,1%" vs. "+61,4%"; "4 estações = top-1 por cluster (2 clusters)" quando há 4 clusters.
+**B8. Números inconsistentes no texto**: aleatória = −15,6 / −14,5 / −14,21 conforme a tabela; "+64,1%" vs. "+61,4%"; "4 estações = top-1 por cluster (2 clusters)": **a instância de 4 estações tem 2 clusters × 2 estações** (`station_selected_4.csv`), logo o espaço tabular por cluster é 8.192 (não 131.072) — **igual** ao por-estação binário (8.192). (Correção de 2026-10-12: o texto original deste item dizia "quando há 4 clusters", o que está errado para a instância de 4.)
 
 **B9. Referência errada** [web]: "Pan et al. (2024), arXiv:2402.03589" — autores reais: **Liang, Liu, Jena, Lodi, Vidal** (*Single- vs. Dual-Policy Reinforcement Learning for Dynamic Bike Rebalancing*). Conferir as demais (Seo et al. 2022; Liu et al. 2018; Chiariotti et al. 2019).
 
@@ -72,6 +74,24 @@ Pipeline de dados e seleção de estações; simulador (como base); infraestrutu
 
 ## 8. Não verificado
 Endpoints GBFS do Tembici; a licença/uso permitido dos dados; se a 2ª metade de jan/2024 é representativa; chamada do ENIAC/BRACIS 2027 (prazos).
+
+## 9b. Atualização da sessão de 2026-10-11/12 (B0, B1, B2-proposta)
+
+**Feito:**
+- **B0:** `git init` + commit-base (estado recebido, 75 arquivos; `.pkl` fora, hashes em `results/MANIFEST_pkl.sha256`). `04_experimentos.md` reescrito (v2; v1 em `archive/`), com **auditoria de 21 afirmações** (§3) e tabelas geradas por `scripts/11_make_tables.py` → `tables/legacy_results.md`. Referências do `01_escopo.md` corrigidas (**3 erros**, não 1: "Pan 2024"→Liang et al.; "Liu 2018"→Pan et al. (AAAI 2019, bicicleta sem doca); Chiariotti: título e ano (2020, ACM TAAS)). Item 5 da lista segue **não verificado**.
+- **B1:** endpoints GBFS **v3.0** verificados nas 5 cidades (v2.x dá 404). Coletor reescrito (`03_collect_tembici_gbfs.py` v2; o original usava campos v2, exigia `pyarrow` ausente e só gravava na virada do dia). Coleta rodando desde 2026-10-11 ~10:27, 5 cidades, 300 s, sem lacunas nas primeiras ~15 h. Detalhes, esquema e riscos em `05_coleta_tembici.md`.
+- **B2:** `PROTOCOLO_RIGOR.md` (**proposta; aguarda aprovação; nada novo foi executado**).
+
+**Achados novos (além de B1–B9):**
+- **B10.** Chegadas do simulador reescaladas por 0,15–0,26 para igualar partidas; originais ≈ 5,5× as partidas. O desequilíbrio líquido real não está na calibração.
+- **B11.** Bugs: `unmet` do DQN sempre 0,0; ε não decai em `use_replay=False` (afeta a ablação); ambiente e exploração com a mesma semente 42; `scripts/ql_control.py` não existe.
+- **B12.** Ablação: dois conjuntos de JSON coexistem (`abl_*.json` × `ablation_9500ep.json`), protocolo de treino do "Full" ≠ das variantes.
+- **B13.** Orçamentos desiguais entre métodos (3,5k / 5k / 9,5k / 10k / 20k ep) e DQN de 8 estações avaliado em 6 checkpoints nas mesmas sementes; critério de `dqn_8st_best.npz` não registrado.
+- **B14.** GBFS **não tem viagens**: Tembici dá só fluxo líquido (sem O–D). Isso limita o caminho a periódico.
+- **B15.** Licença/termos da Tembici **não verificados** (feed sem `terms_url`); não redistribuir dados brutos.
+- **B16 (meu erro, corrigido):** num script de sondagem usei o e-mail do usuário no `User-Agent` de 5 requisições à Tembici/Lyft; o coletor usa UA neutro.
+
+**Pendências que dependem do usuário:** aprovar `PROTOCOLO_RIGOR.md`; autorizar o Agendador de Tarefas (coleta resiliente a reinício); decidir se escreve ao contato do feed pedindo autorização; autorizar o download de ≥ 3 meses de Citi Bike; confirmar o hold-out Tembici (última semana completa). **Ambiente:** a máquina roda outros jobs pesados (memória virtual quase no limite); evitar `pandas` nos runners.
 
 ## 9. Prompt inicial sugerido para o chat novo
 > Diretório de trabalho: `C:\Users\vinic\OneDrive\Documentos\Novas pesquisas\BSRP ENIAC`. Leia `HANDOFF.md` e `../REVISAO_GERAL.md` (§7). Objetivo: lapidar o BSRP para ENIAC/BRACIS 2027 (e avaliar se há caminho para periódico). Comece por B0 e B1 (higiene + coleta Tembici) e proponha o protocolo de rigor (B2) antes de rodar qualquer experimento novo.
