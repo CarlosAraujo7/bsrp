@@ -1,7 +1,8 @@
-# PROTOCOLO DE RIGOR (B2) — proposta v0.1
+# PROTOCOLO DE RIGOR (B2) — v1 (aprovado)
 
-**Data:** 2026-10-12 · **Status: PROPOSTA, aguardando aprovação. Nenhum experimento novo foi rodado.**
-Depois de aprovado: commit + tag `protocolo-v1` **antes** de qualquer execução; desvios vão em `DESVIOS.md` com data e motivo.
+**Data:** 2026-10-12 · **Status: APROVADO pelo usuário em 2026-10-12** (tag git `protocolo-v1`). Nenhum experimento novo havia sido rodado até a tag.
+Decisões do usuário na aprovação: protocolo aprovado como está; hold-out Tembici = última semana completa (seg–dom) da janela de coleta; download de ≥ 3 meses de Citi Bike autorizado (escolhido **Jan–Jun 2024**, a decisão original de `02_dados.md`); e-mail ao contato do feed Tembici a ser rascunhado (envio é do usuário).
+Qualquer mudança a partir daqui vai em `DESVIOS.md` com data e motivo.
 
 Por que existe: os resultados legados usam 1 semente de treino, validam e testam nas mesmas sementes, e comparam métodos com orçamentos e representações diferentes (ver `04_experimentos.md` §3 e §5). Este protocolo define, **antes de ver resultados**, como se mede, compara e decide.
 
