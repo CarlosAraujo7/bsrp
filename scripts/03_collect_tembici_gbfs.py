@@ -10,12 +10,14 @@ O que o feed dá: ESTOQUE por estação (veículos e docas), não viagens. Fluxo
 intervalo = diferença de estoque entre coletas (chegadas e partidas não são separáveis, e
 reposição por caminhão aparece como saltos grandes). Isso vale para o desenho do simulador.
 
-Saída (tudo em UTC, tempos em epoch segundos):
-  <live-dir>/<cidade>/<YYYY-MM-DD>.csv     arquivo do dia, append a cada coleta (à prova de crash)
-  <live-dir>/_log/<YYYY-MM-DD>.csv         uma linha por (coleta, cidade): ok/erro, nº estações, ms
-  <archive-dir>/<cidade>/<YYYY-MM-DD>.csv.gz   dias encerrados (gzip, verificados)
+Saída (tudo em UTC, tempos em epoch segundos), em segmentos HORÁRIOS:
+  <live-dir>/<cidade>/<YYYY-MM-DDTHH>.csv     hora corrente, append a cada coleta (à prova de crash)
+  <live-dir>/_log/<YYYY-MM-DDTHH>.csv         uma linha por (coleta, cidade): ok/erro, nº estações, ms
+  <archive-dir>/<cidade>/<YYYY-MM-DDTHH>.csv.gz   horas encerradas (gzip, verificado, original removido)
   <archive-dir>/station_information/<cidade>/<ts>.json.gz   só quando o cadastro muda
-O live-dir padrão fica FORA do OneDrive (evita re-sincronizar um arquivo que cresce a cada 5 min).
+O live-dir padrão é <projeto>/data/live: pasta COMPARTILHADA entre o Agendador de Tarefas e o shell da
+sessão (o shell do Claude tem um overlay privado de AppData/Local; por isso NÃO usar AppData). Segmentos
+horários evitam que o OneDrive re-envie um arquivo diário grande a cada 5 min.
 
 Uso:
     python scripts/03_collect_tembici_gbfs.py                 # laço, 300 s, todas as cidades
@@ -34,6 +36,7 @@ import os
 import shutil
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -57,8 +60,12 @@ INFO_EVERY_S = 6 * 3600
 
 
 def default_live_dir() -> Path:
-    root = os.environ.get("LOCALAPPDATA") or str(Path.home() / ".local" / "share")
-    return Path(root) / "bsrp_tembici" / "live"
+    return BASE_DIR / "data" / "live"
+
+
+def segment(t: datetime) -> str:
+    """Chave do segmento horário (UTC), ex.: 2026-10-12T09."""
+    return t.strftime("%Y-%m-%dT%H")
 
 
 def now_utc() -> datetime:
@@ -133,13 +140,13 @@ def append_csv(path: Path, header, rows):
         w.writerows(rows)
 
 
-def archive_finished_days(live_dir: Path, archive_dir: Path, today: str):
-    """Comprime em gzip os CSVs de dias < hoje, confere nº de linhas e remove o original."""
+def archive_finished_segments(live_dir: Path, archive_dir: Path, current_seg: str):
+    """Comprime em gzip os CSVs de segmentos < segmento corrente, confere nº de linhas e remove o original."""
     if not live_dir.exists():
         return
     for d in sorted(p for p in live_dir.iterdir() if p.is_dir()):
         for f in sorted(d.glob("*.csv")):
-            if f.stem >= today:
+            if f.stem >= current_seg:
                 continue
             out = archive_dir / d.name / (f.stem + ".csv.gz")
             out.parent.mkdir(parents=True, exist_ok=True)
@@ -157,6 +164,8 @@ def archive_finished_days(live_dir: Path, archive_dir: Path, today: str):
 def save_info_if_changed(session, city, sub, archive_dir: Path, live_dir: Path):
     """Guarda station_information bruto (gz) quando o conteúdo de `data` muda."""
     data, _, _ = get_json(session, sub, "station_information")
+    (live_dir / city).mkdir(parents=True, exist_ok=True)
+    (live_dir / city / "_info_checked").touch()  # persiste o horário da checagem (modo --once reinicia o processo)
     h = hashlib.sha1(json.dumps(data["data"], sort_keys=True).encode()).hexdigest()
     hf = live_dir / city / "_info_hash.txt"
     if hf.exists() and hf.read_text().strip() == h:
@@ -174,21 +183,27 @@ def save_info_if_changed(session, city, sub, archive_dir: Path, live_dir: Path):
 # ──────────────────────────────────────────────────────────────────────────────
 # COLETA
 # ──────────────────────────────────────────────────────────────────────────────
+def _fetch_status(city):
+    with new_session() as session:  # uma sessão por thread/cidade; nunca reaproveitada entre rodadas
+        return get_json(session, CITIES[city], "station_status")
+
+
 def poll_once(cities, live_dir: Path):
-    """Uma rodada. `t` = início da rodada (relógio local); o instante real da observação é `feed_ts`
-    (relógio do servidor, no momento da resposta) — usar feed_ts como tempo da observação."""
+    """Uma rodada, cidades em paralelo. `t` = início da rodada (relógio local); o instante real da
+    observação é `feed_ts` (relógio do servidor na resposta) — usar feed_ts como tempo da observação."""
     t = now_utc()
-    t_epoch, day = int(t.timestamp()), t.strftime("%Y-%m-%d")
-    with new_session() as session:
-        for city in cities:
-            try:
-                data, ms, tries = get_json(session, CITIES[city], "station_status")
-                rows, feed_ts = status_rows(data, t_epoch)
-                append_csv(live_dir / city / f"{day}.csv", FIELDS, rows)
-                log = [t_epoch, city, "ok", len(rows), ms, feed_ts, f"tries={tries}" if tries > 1 else ""]
-            except Exception as e:  # uma cidade com erro não derruba as outras
-                log = [t_epoch, city, "err", 0, "", "", f"{type(e).__name__}: {e}"[:200]]
-            append_csv(live_dir / "_log" / f"{day}.csv", LOG_FIELDS, [log])
+    t_epoch, seg = int(t.timestamp()), segment(t)
+    with ThreadPoolExecutor(max_workers=len(cities)) as ex:
+        futs = {c: ex.submit(_fetch_status, c) for c in cities}
+    for city in cities:  # escrita só na thread principal
+        try:
+            data, ms, tries = futs[city].result()
+            rows, feed_ts = status_rows(data, t_epoch)
+            append_csv(live_dir / city / f"{seg}.csv", FIELDS, rows)
+            log = [t_epoch, city, "ok", len(rows), ms, feed_ts, f"tries={tries}" if tries > 1 else ""]
+        except Exception as e:  # uma cidade com erro não derruba as outras
+            log = [t_epoch, city, "err", 0, "", "", f"{type(e).__name__}: {e}"[:200]]
+        append_csv(live_dir / "_log" / f"{seg}.csv", LOG_FIELDS, [log])
 
 
 def acquire_lock(live_dir: Path):
@@ -214,11 +229,14 @@ def run(cities, interval, live_dir: Path, archive_dir: Path, once: bool, max_pol
     if lock is None:
         print("Outra instância do coletor já está rodando (trava em", live_dir / ".lock", ").")
         return 2
-    last_info = 0.0
+    last_info = min((live_dir / c / "_info_checked").stat().st_mtime if (live_dir / c / "_info_checked").exists()
+                    else 0.0 for c in cities)
     n = 0
     print(f"Coletando {','.join(cities)} a cada {interval}s | live={live_dir} | arquivo={archive_dir}")
     try:
         while True:
+            poll_once(cities, live_dir)  # primeiro a observação; o cadastro (lento) depois
+            archive_finished_segments(live_dir, archive_dir, segment(now_utc()))
             if time.time() - last_info > INFO_EVERY_S:
                 with new_session() as session:
                     for c in cities:
@@ -227,8 +245,6 @@ def run(cities, interval, live_dir: Path, archive_dir: Path, once: bool, max_pol
                         except Exception as e:
                             print(f"  ! station_information {c}: {e}", file=sys.stderr)
                 last_info = time.time()
-            poll_once(cities, live_dir)
-            archive_finished_days(live_dir, archive_dir, now_utc().strftime("%Y-%m-%d"))
             n += 1
             if once or (max_polls and n >= max_polls):
                 return 0

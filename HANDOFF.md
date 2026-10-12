@@ -91,7 +91,13 @@ Endpoints GBFS do Tembici; a licença/uso permitido dos dados; se a 2ª metade d
 - **B15.** Licença/termos da Tembici **não verificados** (feed sem `terms_url`); não redistribuir dados brutos.
 - **B16 (meu erro, corrigido):** num script de sondagem usei o e-mail do usuário no `User-Agent` de 5 requisições à Tembici/Lyft; o coletor usa UA neutro.
 
-**Pendências que dependem do usuário:** aprovar `PROTOCOLO_RIGOR.md`; autorizar o Agendador de Tarefas (coleta resiliente a reinício); decidir se escreve ao contato do feed pedindo autorização; autorizar o download de ≥ 3 meses de Citi Bike; confirmar o hold-out Tembici (última semana completa). **Ambiente:** a máquina roda outros jobs pesados (memória virtual quase no limite); evitar `pandas` nos runners.
+**Atualização de 2026-10-12 (tarde):** o usuário autorizou o Agendador de Tarefas. Tarefa **`BSRP-Tembici-GBFS`** criada (`--once` a cada 5 min, prioridade 4, só com o usuário logado). Três problemas descobertos e corrigidos ao ativá-la:
+- **B17.** O Agendador roda tarefas com prioridade 7 (abaixo do normal); com a CPU a 100% por outros jobs, a coleta morria de fome (coletas de 06:40 e 06:45 de 12/out perdidas). Prioridade fixada em 4.
+- **B18.** **O shell do Claude escreve num overlay privado de `AppData\Local`**; a tarefa (mundo real) e eu víamos arquivos diferentes com o mesmo caminho. Dados resgatados para `data/raw/tembici/<cidade>/2026-10-12_{overlay,real}.csv.gz`. O diretório vivo passou a ser `data/live/` (compartilhado), em segmentos horários. **Nunca rodar o coletor de verdade pelo shell da sessão.**
+- **B19.** O coletor checava o cadastro das estações antes de coletar (atraso de ~1 min) e coletava as cidades em série; agora coleta primeiro e em paralelo.
+Detalhes em `05_coleta_tembici.md` §3–§4 e §6.
+
+**Pendências que dependem do usuário:** confirmar a aprovação de `PROTOCOLO_RIGOR.md` (o "Aprovado" de 12/out foi dado junto com o pedido da tarefa agendada); decidir se escreve ao contato do feed pedindo autorização; autorizar o download de ≥ 3 meses de Citi Bike; confirmar o hold-out Tembici (última semana completa). **Ambiente:** a máquina roda outros jobs pesados (memória virtual quase no limite); evitar `pandas` nos runners.
 
 ## 9. Prompt inicial sugerido para o chat novo
 > Diretório de trabalho: `C:\Users\vinic\OneDrive\Documentos\Novas pesquisas\BSRP ENIAC`. Leia `HANDOFF.md` e `../REVISAO_GERAL.md` (§7). Objetivo: lapidar o BSRP para ENIAC/BRACIS 2027 (e avaliar se há caminho para periódico). Comece por B0 e B1 (higiene + coleta Tembici) e proponha o protocolo de rigor (B2) antes de rodar qualquer experimento novo.
