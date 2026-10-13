@@ -99,5 +99,21 @@ Detalhes em `05_coleta_tembici.md` §3–§4 e §6.
 
 **Pendências que dependem do usuário:** confirmar a aprovação de `PROTOCOLO_RIGOR.md` (o "Aprovado" de 12/out foi dado junto com o pedido da tarefa agendada); decidir se escreve ao contato do feed pedindo autorização; autorizar o download de ≥ 3 meses de Citi Bike; confirmar o hold-out Tembici (última semana completa). **Ambiente:** a máquina roda outros jobs pesados (memória virtual quase no limite); evitar `pandas` nos runners.
 
+## 9c. Atualização de 2026-10-12/13 — protocolo em execução (leia isto antes de §3, que ficou parcialmente desatualizado)
+
+Estado: protocolo v1 **aprovado** (tag `protocolo-v1`), pacote `bsrp/` + 16 testes (G0 ok: regressão exata contra o legado), Citi Bike Jan–Jun 2024 extraído (`data/processed/citibike_2024/`), instâncias calibradas em dados reais, ajuste de hiperparâmetros e experimento final em execução. **Toda decisão/desvio está em `DESVIOS.md`; resultados em `runs/*.jsonl`, tabelas em `tables/`.**
+
+Achados que **substituem** conclusões de §3:
+- **B20.** O DQN legado estava mal treinado: um DQN com máscara no alvo, buffer reprodutível e treino estável (mesma rede 64-64) chega a **−0,3** em 4 est. (parada −3,4; gulosa calibrada −1,1), verificado também **dentro do simulador legado**. A tese "tabular por estação empata com o DQN" (B5) cai: tabular e linear ficam *pior que a política parada* com o mesmo orçamento; a rede neural domina.
+- **B21.** A política **parada** e a **gulosa calibrada em validação** são as referências corretas. A aleatória é barra baixa porque movimentos aleatórios pioram o sistema. Calibração importa muito (gulosa legada −2,25 → calibrada −1,13 em 4 est. legado).
+- **B22.** Dado legado defeituoso: chegadas ≈ 5× partidas era defeito do pré-processamento; com Jan–Jun completos, chegadas ≈ partidas (0,995–1,012). O demanda legada ×3,5 dava 66–80 partidas/estação/dia contra ~**200** reais. **Instâncias primárias passaram a ser `cb4wd/cb8wd/cb12wd`** (λ real, sem escala), com teste adicional em **dias reais** de teste. `tables/real_data_checks.md`.
+- **B23.** O modelo de Poisson **superestima a dificuldade** em 30–40% em relação a dias reais (parada: sintético −47/−90/−131 × real −33/−54/−85 em 4/8/12 est.).
+- **B24.** Só 2,0/3,1/4,5% das partidas terminam dentro da própria instância (O–D): subsistema aberto; sem conservação é uma aproximação justificada para esses tamanhos.
+- **B25 (limitação do simulador).** Todo deslocamento custa exatamente 1 intervalo em 4/8/12 estações (32 decisões por episódio sempre): **não há restrição de roteamento nem de tempo de viagem**; o problema é de "quanto e para onde mover" a cada 30 min. Para periódico isso precisa mudar (frota/rotas/tempo de viagem realistas).
+- **B26.** Ocupação inicial dos dias reais é desconhecida nos dados de viagem (usa-se 50% ± 2): limitação declarada.
+- **Resultados parciais (legacy8/12, padrão, 300 mil passos):** DQN vence a gulosa calibrada em 4 e 8 estações, mas **perde em 12** (−3,8 × −2,0), ainda sem ajuste. Em `cb4wd` o DQN corta ~45% da demanda perdida da melhor gulosa (−13 × −24,5; dias reais −13 × −25,4).
+
+Pendências do usuário: enviar o e-mail à Tembici (`docs/email_tembici_rascunho.md`).
+
 ## 9. Prompt inicial sugerido para o chat novo
 > Diretório de trabalho: `C:\Users\vinic\OneDrive\Documentos\Novas pesquisas\BSRP ENIAC`. Leia `HANDOFF.md` e `../REVISAO_GERAL.md` (§7). Objetivo: lapidar o BSRP para ENIAC/BRACIS 2027 (e avaliar se há caminho para periódico). Comece por B0 e B1 (higiene + coleta Tembici) e proponha o protocolo de rigor (B2) antes de rodar qualquer experimento novo.

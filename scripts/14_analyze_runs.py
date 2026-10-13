@@ -107,7 +107,7 @@ def analyze(learners, heur, out):
 
         # melhor aprendido e melhor heurística, ambos escolhidos em VALIDAÇÃO
         best_l = max(val_means, key=lambda m: val_means[m].mean())
-        cal = {k: v for k, v in H[inst].items() if k.endswith(("_cal", "_cal2"))}
+        cal = {k: v for k, v in H[inst].items() if k.endswith(("_cal", "_cal2", "_cal3"))}
         best_h = None
         if cal:
             best_h = max(cal, key=lambda k: max((cal[k]["val_table"] or {0: -1e9}).values()))
@@ -141,6 +141,30 @@ def analyze(learners, heur, out):
             lines.append(f"| {lab} | {fmt(float(np.mean(d)))} | {fmt(p, 4)} | {fmt(pa, 4)} | {fmt(wp, 4)} | {fmt(ps)} |")
         if eq_rows:
             lines.append(f"\nEquivalência (TOST, δ = {DELTA_EQ}): " + "; ".join(f"{lab}: diff {fmt(d)}, p_TOST {fmt(p, 4)}" for lab, d, p in eq_rows))
+
+        # --- dias REAIS de teste (hold-out), quando existem -----------------------------------------------------
+        if any("real_test_mean" in r for recs in L[inst].values() for r in recs):
+            lines.append("\n### Dias REAIS de teste (replay dos fluxos observados nas semanas de teste), por semente\n")
+            lines.append("| método | n sem. | média | DP entre sem. | IC95% t |")
+            lines.append("|---|---|---|---|---|")
+            real_means = {}
+            for m, recs in sorted(L[inst].items()):
+                xr = np.array([r["real_test_mean"] for r in recs if "real_test_mean" in r])
+                real_means[m] = xr
+                lo, hi = ci_t(xr)
+                lines.append(f"| {m} | {len(xr)} | {fmt(xr.mean())} | {fmt(xr.std(ddof=1) if len(xr) > 1 else np.nan)} | [{fmt(lo)}; {fmt(hi)}] |")
+            lines.append("")
+            lines.append("| referência (sem aprendizado) | dias reais |")
+            lines.append("|---|---|")
+            for m, r in sorted(H[inst].items()):
+                if "real_test_mean" in r:
+                    lines.append(f"| {m} | {fmt(r['real_test_mean'])} |")
+            if best_h and best_l in real_means and "real_test_mean" in H[inst][best_h]:
+                d = real_means[best_l] - H[inst][best_h]["real_test_mean"]
+                t, p = stats.ttest_1samp(d, 0.0)
+                lines.append(f"\nC1r (dias reais): {best_l} − {best_h} (ambos escolhidos por val): diferença média {fmt(float(d.mean()))}, "
+                             f"p(t) = {fmt(p, 4)}, fração de sementes melhores que a heurística = {fmt(float(np.mean(d > 0)))}. "
+                             f"Obs.: 24 dias úteis de teste; ocupação inicial desconhecida (50% ± 2).")
 
         sds = {m: x.std(ddof=1) for m, x in seed_means.items() if len(x) > 1}
         if sds:

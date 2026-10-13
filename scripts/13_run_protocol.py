@@ -118,7 +118,10 @@ def cmd_heuristics(a):
         env = E.BSRPEnv(inst)
         refs = [P.Stay(), P.RandomPolicy(np.random.default_rng(1)), P.LegacyGreedy(), P.LegacyThreshold(0.5)]
         cal = {}
-        if a.only_greedy2:      # reexecução só da grade estendida da gulosa (DESVIOS.md)
+        if a.only_greedy3:      # grade 3 da gulosa (DESVIOS.md 2026-10-13)
+            refs = []
+            fams = (("greedy_cal3", P.greedy_grid3()),)
+        elif a.only_greedy2:      # reexecução só da grade estendida da gulosa (DESVIOS.md)
             refs = []
             fams = (("greedy_cal2", P.greedy_grid2()),)
         elif a.skip_threshold:
@@ -181,6 +184,7 @@ def main():
         p.add_argument("--out", default=str(ROOT / "runs" / f"{name}.jsonl"))
         if name == "heuristics":
             p.add_argument("--only-greedy2", action="store_true", help="só a grade estendida da gulosa")
+            p.add_argument("--only-greedy3", action="store_true", help="só a grade 3 da gulosa")
             p.add_argument("--skip-threshold", action="store_true")
         if name == "learners":
             p.add_argument("--methods", nargs="+", default=["tab_cluster", "tab_station", "linear", "dqn"])
