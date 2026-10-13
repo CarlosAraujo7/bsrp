@@ -12,6 +12,10 @@ Cenários sintéticos: val = 200, test = 1000 por instância (SeedSequence próp
 scenarios/ com hash. Instâncias `cb*`: avaliação adicional em DIAS REAIS de teste (replay de fluxos observados nas
 semanas de teste). Heurísticas: calibradas em val (sintético), avaliadas uma vez em test.
 """
+import os
+for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):   # BLAS de 1 thread: 2,5x mais rapido sob disputa de CPU
+    os.environ.setdefault(_v, "1")
+
 import argparse
 import json
 import re

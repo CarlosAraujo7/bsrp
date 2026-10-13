@@ -9,6 +9,10 @@ médio em VALIDAÇÃO (último ponto da curva; nunca teste). Saídas:
 
   python scripts/16_tune.py --instance cb4wd --methods dqn linear tab_station tab_cluster pg --configs 8 --seeds 1000 1001 --budget 100000
 """
+import os
+for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):   # BLAS de 1 thread: 2,5x mais rapido sob disputa de CPU
+    os.environ.setdefault(_v, "1")
+
 import argparse
 import importlib.util
 import json
