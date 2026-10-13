@@ -107,7 +107,7 @@ def analyze(learners, heur, out):
 
         # melhor aprendido e melhor heurística, ambos escolhidos em VALIDAÇÃO
         best_l = max(val_means, key=lambda m: val_means[m].mean())
-        cal = {k: v for k, v in H[inst].items() if k.endswith("_cal")}
+        cal = {k: v for k, v in H[inst].items() if k.endswith(("_cal", "_cal2"))}
         best_h = None
         if cal:
             best_h = max(cal, key=lambda k: max((cal[k]["val_table"] or {0: -1e9}).values()))
@@ -151,7 +151,10 @@ def analyze(learners, heur, out):
                 lines.append(f"| {m} | {fmt(sd)} | {n_needed(sd,1,True)} | {n_needed(sd,0.5,True)} | {n_needed(sd,1,False)} | {n_needed(sd,0.5,False)} |")
     Path(out).parent.mkdir(parents=True, exist_ok=True)
     Path(out).write_text("\n".join(lines) + "\n", encoding="utf-8")
-    print("\n".join(lines))
+    try:
+        print("\n".join(lines))
+    except UnicodeEncodeError:       # console cp1252 no Windows; a tabela já foi gravada em UTF-8
+        print(f"(tabela gravada em {out})")
 
 
 if __name__ == "__main__":
