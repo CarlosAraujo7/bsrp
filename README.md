@@ -1,6 +1,6 @@
 # BSRP — rebalanceamento de bicicletas compartilhadas com RL (alvo: ENIAC/BRACIS 2027)
 
-Estado: **lapidação em andamento** (início 2026-10-11). Ler primeiro: [`HANDOFF.md`](HANDOFF.md) (histórico e achados),
+Estado: **lapidação em andamento** (início 2026-10-11; P1 — busca de hiperparâmetros estendida — em execução em 2026-10-14). Repositório: <https://github.com/CarlosAraujo7/bsrp>. Ler primeiro: [`HANDOFF.md`](HANDOFF.md) (histórico e achados),
 [`PROTOCOLO_RIGOR.md`](PROTOCOLO_RIGOR.md) (v1, aprovado; tag `protocolo-v1`), [`DESVIOS.md`](DESVIOS.md).
 
 ## Mapa
@@ -18,7 +18,8 @@ Estado: **lapidação em andamento** (início 2026-10-11). Ler primeiro: [`HANDO
 | `scripts/13_run_protocol.py` | executor: `scenarios`, `heuristics`, `learners` → `runs/*.jsonl` |
 | `scripts/14_analyze_runs.py` | análise estatística do protocolo → `tables/*.md` |
 | `scripts/15_real_data_checks.py`, `18_tuning_table.py` | checagens dos dados reais e tabela de configs ajustadas |
-| `scripts/16_tune.py`, `17_pipeline_final.py` | ajuste de hiperparâmetros e pipeline final (retomáveis) |
+| `scripts/16_tune.py`, `17_pipeline_final.py` | ajuste de hiperparâmetros e pipeline final (retomáveis); `--space ext` / `--ext` = pool estendido de 16 configs (P1) |
+| `scripts/20_ablation.py`, `21_analyze_p1_p2.py` | ablação do DQN (P2) e análise do P1 (pool estendido) e da ablação (C7–C9) |
 | `HANDOFF.md`, `PROMPT_NOVO_CHAT.md` | **estado atual e prompt para um novo agente** (leia o HANDOFF primeiro) |
 | `tables/final_cb_wd.md` | **resultado principal** (10 sementes × 5 aprendizes × 3 escalas, sintético e dias reais) |
 | `scenarios/` | conjuntos fixos de validação (200) e teste (1000) por instância, com hash |

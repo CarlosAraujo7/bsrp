@@ -3,6 +3,7 @@
 > Pasta de trabalho: `C:\Users\vinic\OneDrive\Documentos\Novas pesquisas\BSRP ENIAC`. Idioma de trabalho com o usuário: **português**.
 > Este arquivo **substitui** o HANDOFF v1 (arquivado em `archive/HANDOFF_v1_2026-10-11.md`, parcialmente superado).
 > Leia, nesta ordem: este arquivo → `PROTOCOLO_RIGOR.md` → `DESVIOS.md` → `README.md`. Detalhes históricos: `04_experimentos.md` (legado auditado), `05_coleta_tembici.md`.
+> **Atualização 2026-10-14 (tarde):** **P1 em execução** desde 09:57 (pool de 16 configs por método; ver §5) e executor da ablação (P2) pronto. Remoto `origin` = <https://github.com/CarlosAraujo7/bsrp> (**público**; push feito, com a tag `protocolo-v1`; o e-mail do autor dos commits é público, por decisão do usuário). Commits `020bdcb` (P1) e `d62b678` (P2).
 
 ## 0. Objetivo
 Lapidar o BSRP (rebalanceamento de bicicletas compartilhadas com 1 veículo, RL) para **ENIAC/BRACIS 2027** (chamada ainda não publicada em 2026-10-14; ENIAC 2026 fechou em 22/jun/2026; verificar `bracis.sbc.org.br`) e **avaliar** se há caminho para periódico (condicional; ver §6). O diferencial planejado é o dado brasileiro (Tembici, só estoque, sem O–D).
@@ -10,7 +11,7 @@ Lapidar o BSRP (rebalanceamento de bicicletas compartilhadas com 1 veículo, RL)
 ## 1. Estado em uma página
 - **Protocolo de rigor v1 aprovado** pelo usuário (tag git `protocolo-v1`). Toda decisão que o protocolo não cobria ou que desviou dele está em `DESVIOS.md` (com a coluna "resultados vistos antes?"). **Registre no `DESVIOS.md` ANTES de rodar qualquer coisa nova.**
 - **Experimento principal concluído** em 3 instâncias calibradas em dados reais (`cb4wd`, `cb8wd`, `cb12wd`; dia útil): **10 sementes × 5 aprendizes × 500.000 passos**, hiperparâmetros ajustados em validação, comparados com heurísticas calibradas e com a política "parada", em 1000 cenários sintéticos compartilhados **e em 24 dias reais de teste**. Runs: `runs/final_<inst>.jsonl` (commit `a0c5930`, sem alterações pendentes). Análise: `tables/final_cb_wd.md`; configs: `tables/tuned_configs.md`.
-- Testes: `python -m unittest discover -s tests` → 16 OK (regressão **exata** contra o simulador legado, invariantes, CRN, reprodutibilidade por semente).
+- Testes: `python -m unittest discover -s tests` → 33 OK (regressão **exata** contra o simulador legado, invariantes, CRN, reprodutibilidade por semente; pool de ajuste; variantes da ablação; análise P1/P2 sobre dados sintéticos; ≈ 2 min com a máquina saturada).
 - Coleta Tembici rodando por tarefa agendada (ver §7); ~3,5 dias coletados, 3 lacunas ≤ 14 min no Rio. **Instância Tembici ainda não construída.**
 
 ### Resultados (reward = −demanda não atendida por dia; maior = melhor; média de 10 sementes)
@@ -46,7 +47,8 @@ Lapidar o BSRP (rebalanceamento de bicicletas compartilhadas com 1 veículo, RL)
 | `bsrp/policies.py` | `Stay`, `RandomPolicy`, `LegacyGreedy/Threshold` (portes exatos), `GreedyFamily` + grades 1–3, `ThresholdFamily`, `Rollout` (honesto: futuros amostrados do modelo; **implementado, não rodado em escala**) |
 | `bsrp/agents.py` | `QTabular` (cluster/estação), `DQN` (`hidden=()` = linear; flags `use_replay/use_target/double` para ablação), `PolicyGradient` (REINFORCE + baseline) |
 | `bsrp/train.py` | `SeedSequence` (4 fluxos independentes), treino em passos de ambiente, val periódica, `final_eval` |
-| `tests/` | 16 testes (G0) |
+| `tests/` | 28 testes: G0 (regressão, invariantes, CRN, reprodutibilidade), `test_tuning.py` (pool de 16 contém o de 8), `test_ablation.py` (variantes) |
+| `scripts/20_ablation.py` | ablação do DQN (P2): `noreplay/notarget/nodouble/vanilla` sobre a config do P1, sementes 0–9 → `runs/ablation_<inst>.jsonl` (retomável) |
 | `scripts/12_prepare_citibike.py` | zips Citi Bike → `data/processed/citibike_2024/flows_od.npz` (fluxos 30 min + O–D só de semanas de treino) |
 | `scripts/13_run_protocol.py` | executor: `scenarios` / `heuristics` / `learners` (instâncias `4`, `legacy4x1.5`, `cb4wd`, `cb12we`, `cb4wdx1.5`…) |
 | `scripts/14_analyze_runs.py` | estatística do protocolo (IC sobre sementes, Holm, TOST, dias reais) → `tables/*.md` |
@@ -55,7 +57,7 @@ Lapidar o BSRP (rebalanceamento de bicicletas compartilhadas com 1 veículo, RL)
 | `scripts/03_collect_tembici_gbfs.py` | coletor GBFS v3.0 (tarefa agendada) |
 | `scripts/01–10` | **legado** (não editar; usados nos testes de regressão) |
 | `scenarios/` | val (200) e test (1000) sintéticos por instância, com hash |
-| `runs/` | `final_*.jsonl`, `tune_*.jsonl`, `tuned_*.json`, `heuristics_*.jsonl`, pilotos |
+| `runs/` | `final_*.jsonl`, `tune_*.jsonl`, `tuned_*.json`, `heuristics_*.jsonl`, pilotos; P1: `tuned_ext_*.json`, `final_ext_*.jsonl`, `p1_*.out` (log, não versionado); P2: `ablation_*.jsonl` |
 | `tables/` | `final_cb_wd.md` (principal), `tuned_configs.md`, `real_data_checks.md`, `pilot_*.md`, `legacy_results.md` |
 | `data/` (fora do git, mas no disco/OneDrive) | `live/` + `raw/tembici/` (coleta), `processed/citibike_2024/` (fluxos). Os zips do Citi Bike (3,7 GB) estavam no scratchpad da sessão anterior e **podem não existir mais**; refaça o download se precisar (S3 `tripdata/2024MM-citibike-tripdata.zip`, licença: NYCBS Data Use Policy) |
 | `archive/` | v1 do HANDOFF e de `04_experimentos.md` |
@@ -69,7 +71,13 @@ python scripts/16_tune.py --instance cb4wd --methods dqn tab_station tab_cluster
 python scripts/17_pipeline_final.py cb4wd         # 10 sementes x 5 métodos x 500k passos, pula o que já existe
 python scripts/14_analyze_runs.py --learners runs/final_cb4wd.jsonl runs/final_cb8wd.jsonl runs/final_cb12wd.jsonl \
        --heuristics runs/heuristics_cb_wd.jsonl runs/heuristics_cb_wd_g3.jsonl --out tables/final_cb_wd.md
+# P1 (pool estendido de 16 configs; as 8 originais são reaproveitadas de runs/tune_<inst>.jsonl):
+python scripts/16_tune.py --instance cb4wd --space ext --configs 16 --methods dqn linear tab_station tab_cluster pg --seeds 1000 1001 --budget 200000
+python scripts/17_pipeline_final.py --ext cb4wd   # reroda só os métodos cuja config escolhida difere da original -> runs/final_ext_cb4wd.jsonl
+# P2 (ablação; precisa de runs/tuned_ext_<inst>.json com o DQN):
+python scripts/20_ablation.py --instance cb12wd [--variants noreplay vanilla] [--seeds 0 1 2]
 ```
+Use `python -X utf8` nos scripts de análise (console cp1252).
 Tempos (máquina compartilhada, BLAS de 1 thread): DQN 500k passos ≈ 5–6 min por run (10 sementes ≈ 1 h por escala); linear 2–3 min; PG e tabular ≈ 1–2 min. Ajuste do DQN (8 configs × 2 sementes × 200k) ≈ 1–2 h por escala.
 
 ## 4. Regras de conduta (o que o usuário aprovou e espera)
@@ -80,8 +88,8 @@ Tempos (máquina compartilhada, BLAS de 1 thread): DQN 500k passos ≈ 5–6 min
 5. Não encerre processos que não sejam seus (a máquina roda jobs de outros projetos do usuário).
 
 ## 5. O que falta — prioridades e critérios de aceite
-**P1 — Espaço de busca do DQN (antes de qualquer afirmação de magnitude).** A config vencedora do DQN é a mesma nas 3 escalas e tem **3 hiperparâmetros no máximo do espaço** (`target_sync=4000`, `batch=128`, `buffer=50000`; `lr=4,43e-4`, `train_every=2`). Estender (`target_sync` até 16000, `batch` 256, `buffer` 200000, `train_every` 1, `lr`) com o **mesmo orçamento de configs para todos os métodos** (registrar em DESVIOS) e rerodar o DQN final. Faça o mesmo para qualquer método cujo ótimo caia na borda. Critério: ótimo no interior do espaço ou ganho marginal documentado. Obs.: nas escalas 8/12 o ajuste foi decisivo (+18,6 e +22,0 de val); com parâmetros padrão o DQN perde para a heurística em 12 est.
-**P2 — Ablação do DQN (protocolo C7–C9, ainda não feita).** Variantes `use_replay=False`, `use_target=False`, `double=False` e "vanilla" (as três), **mesmo cronograma de ε** (em `train()` o ε já decai por passos para todos; o bug do legado não existe aqui), ≥ 10 sementes, na instância `cb12wd` (e `cb4wd`). Adicionar aliases de método no runner (`make_agent(..., **kw)` já aceita as flags). Só afirme "componente necessária" se o IC da diferença pareada por semente excluir 0.
+**P1 — Espaço de busca do DQN (antes de qualquer afirmação de magnitude). STATUS 14/out: EM EXECUÇÃO** (3 cadeias ocultas, uma por escala: `16_tune.py --space ext` → `17_pipeline_final.py --ext`; log em `runs/p1_<inst>.out`). Decisões do usuário: **todos os 5 métodos**, **batch ≤ 256**, 3 processos. Especificação completa, espaços novos e **regra de decisão pré-registrada** na última linha de `DESVIOS.md` com data 2026-10-14 (argmax em val sobre as 16; reroda 10 sementes × 500k só onde a escolhida difere da original; original e estendida são reportadas lado a lado). Custo medido sob CPU saturada: 1 run de ajuste do DQN (200k passos, `train_every`=1) ≈ 11 min; DQN final 500k passos ≈ 7–17 min conforme a config. *Texto original da prioridade:* A config vencedora do DQN é a mesma nas 3 escalas e tem **3 hiperparâmetros no máximo do espaço** (`target_sync=4000`, `batch=128`, `buffer=50000`; `lr=4,43e-4`, `train_every=2`). Estender (`target_sync` até 16000, `batch` 256, `buffer` 200000, `train_every` 1, `lr`) com o **mesmo orçamento de configs para todos os métodos** (registrar em DESVIOS) e rerodar o DQN final. Faça o mesmo para qualquer método cujo ótimo caia na borda. Critério: ótimo no interior do espaço ou ganho marginal documentado. Obs.: nas escalas 8/12 o ajuste foi decisivo (+18,6 e +22,0 de val); com parâmetros padrão o DQN perde para a heurística em 12 est.
+**P2 — Ablação do DQN (protocolo C7–C9). STATUS 14/out: executor e testes prontos (`scripts/20_ablation.py`, `tests/test_ablation.py`); roda DEPOIS do P1**, sobre a config do DQN escolhida lá, em `cb12wd` e `cb4wd`, sementes 0–9; especificação e duas observações de desenho (double é no-op sem rede-alvo; `−replay` = lote 1 online) no `DESVIOS.md`. A análise C7–C9 (IC pareado por semente + Holm) está em `scripts/21_analyze_p1_p2.py`. *Texto original:* Variantes `use_replay=False`, `use_target=False`, `double=False` e "vanilla" (as três), **mesmo cronograma de ε** (em `train()` o ε já decai por passos para todos; o bug do legado não existe aqui), ≥ 10 sementes, na instância `cb12wd` (e `cb4wd`). Adicionar aliases de método no runner (`make_agent(..., **kw)` já aceita as flags). Só afirme "componente necessária" se o IC da diferença pareada por semente excluir 0.
 **P3 — Sensibilidade (protocolo §8.1, redefinida em DESVIOS).** `cbNwdxK` com K ∈ {0,5; 0,75; 1,5} e `cb*we` (fim de semana); arm legado com escala {1,5; 2,5; 3,5; 5}. Os **pesos dos agentes não foram salvos** → é preciso retreinar. Desenho reduzido sugerido (registrar antes): DQN ajustado × 5 sementes + gulosa calibrada + parada, em `cb4wd` e `cb12wd`. Reporte onde o sinal da conclusão muda.
 **P4 — Baselines faltantes.** (a) `Rollout(base=melhor heurística, h=1..2, K=4)` em todas as escalas (código pronto, `tests/test_learners.py` cobre); (b) **uma referência da literatura** adaptada e chamada "adaptação", não "reprodução": Seo et al. (2022, ADP/RL, docas) ou Liang et al. (2024, arXiv:2402.03589, single- vs dual-policy). Leia os dois e verifique o que é reproduzível. (c) Família `threshold` nas instâncias `cb*` (foi pulada com `--skip-threshold`; dominada pela gulosa nas legadas).
 **P5 — Tembici (diferencial brasileiro).** Construir `scripts/19_prepare_tembici.py`: snapshots (`data/live` + `data/raw/tembici`, concatenar e deduplicar por `(station_id, t)`; **tempo da observação = `feed_ts`**) → fluxo líquido por estação e 30 min (diferença de estoque; chegadas e partidas **não são separáveis** e reposição por caminhão aparece como salto |Δ|≥5) → instância Rio/SP (escolher ~12 estações por volume em semanas de treino) + replay de fluxo líquido real. **Hold-out já definido: última semana completa seg–dom da janela; val = semana anterior; calendário marcado (12/out, 2/nov, 15/nov; 2º turno 25/out a confirmar)**. A coleta começou em 2026-10-11 (domingo); a 1ª semana completa é 12–18/out; meta ≥ 4 semanas (até ~8/nov), ideal 8–12. Portão G3: o simulador reproduz distribuição horária de fluxo líquido e ocupação em dias de hold-out dentro de tolerância **fixada antes** de ver o hold-out; senão Tembici vira estudo descritivo. **Licença/termos não verificados**: não redistribuir dados brutos; e-mail ao feed aguardando o usuário.
@@ -105,7 +113,8 @@ Tempos (máquina compartilhada, BLAS de 1 thread): DQN 500k passos ≈ 5–6 min
 - Processos longos: `Start-Process python -ArgumentList "-I","scripts/<x>.py",... -WindowStyle Hidden -RedirectStandardOutput runs\x.out`. Morrem se o notebook desligar; `16_tune.py` e `17_pipeline_final.py` pulam o que já está gravado — relance.
 - `| Out-String` bufferiza a saída até o fim do job; para acompanhar, leia `runs/*.jsonl`. `sleep` longo é bloqueado; use Monitor (expira em 30 min).
 - Console Windows é cp1252: use `sys.stdout.reconfigure(errors="replace")` ou grave em arquivo UTF-8. `python -I` ignora variáveis `PYTHON*`.
-- Git local (sem remoto); identidade já configurada; commits terminam com `Co-Authored-By: Claude ...`. Dados em `data/` e `*.pkl` não são versionados.
+- Git com remoto `origin` (GitHub **público**, <https://github.com/CarlosAraujo7/bsrp>); identidade já configurada; commits terminam com `Co-Authored-By: Claude ...`. Dados em `data/` e `*.pkl` não são versionados. **Push só com confirmação do usuário** (o de 14/out foi autorizado explicitamente). Com runs finais ativos, não edite `bsrp/` nem `scripts/` (cada run é subprocesso novo e grava a flag *dirty*); arquivos novos só com commit imediato.
+- Em 14/out a CPU estava a 100% (jobs de outros projetos): meus processos pegavam 40–60% de um núcleo cada (i5-12450H, 8 núcleos/12 threads); conte com ~2× o tempo medido com a máquina livre.
 
 ## 8. Não verificado / pendente do usuário
 Licença e termos da Tembici; chamada ENIAC/BRACIS 2027 (prazos); item 5 das referências; **envio do e-mail à Tembici** (`docs/email_tembici_rascunho.md`); manter o notebook ligado e logado durante a coleta.
