@@ -74,6 +74,12 @@ python scripts/14_analyze_runs.py --learners runs/final_cb4wd.jsonl runs/final_c
 # P1 (pool estendido de 16 configs; as 8 originais são reaproveitadas de runs/tune_<inst>.jsonl):
 python scripts/16_tune.py --instance cb4wd --space ext --configs 16 --methods dqn linear tab_station tab_cluster pg --seeds 1000 1001 --budget 200000
 python scripts/17_pipeline_final.py --ext cb4wd   # reroda só os métodos cuja config escolhida difere da original -> runs/final_ext_cb4wd.jsonl
+# Fatias paralelas do P1 (só com a máquina livre e autorização para > 3 processos; custo equilibrado por LPT):
+python scripts/16_tune.py --instance cb4wd --space ext --configs 16 --methods dqn linear tab_station tab_cluster pg \
+       --seeds 1000 1001 --budget 200000 --shard 0/4 --fill-only      # ... 1/4, 2/4, 3/4, cada fatia em seu processo
+python scripts/16_tune.py --instance cb4wd --space ext --configs 16 --methods dqn linear tab_station tab_cluster pg \
+       --seeds 1000 1001 --budget 200000                              # SÓ depois de todas imprimirem FILL-FIM: escolhe e grava tuned_ext
+python scripts/17_pipeline_final.py --ext cb4wd --seeds 0 1 2 3 4 --methods dqn   # runs finais também em fatias (por sementes/métodos)
 # P2 (ablação; precisa de runs/tuned_ext_<inst>.json com o DQN):
 python scripts/20_ablation.py --instance cb12wd [--variants noreplay vanilla] [--seeds 0 1 2]
 ```

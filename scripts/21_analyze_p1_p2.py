@@ -65,11 +65,14 @@ def tost_paired(d, delta=DELTA):
 # ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 def pool_stats(rows, method):
     """cfg_id -> (cfg, val médio sobre as sementes de ajuste, n sementes)."""
-    by, cfgs = defaultdict(list), {}
-    for r in rows:
+    last, cfgs = {}, {}
+    for r in rows:                                   # execução repetida (mesma config e semente): vale a última
         if r["method"] == method:
-            by[r["cfg_id"]].append(r["val_final"])
+            last[(r["cfg_id"], r["seed"])] = r["val_final"]
             cfgs[r["cfg_id"]] = r["cfg"]
+    by = defaultdict(list)
+    for (i, _), v in last.items():
+        by[i].append(v)
     return {i: (cfgs[i], float(np.mean(v)), len(v)) for i, v in by.items()}
 
 

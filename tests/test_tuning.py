@@ -50,5 +50,39 @@ class TestConfigPool(unittest.TestCase):
                 self.assertEqual(TUNE.config_list(m, t["n_configs"], "orig")[t["cfg_id"]], t["cfg"], (inst, m))
 
 
+class TestSharding(unittest.TestCase):
+    """Fatias paralelas do ajuste (--shard i/N): partição completa, disjunta, equilibrada e determinística."""
+
+    @staticmethod
+    def jobs():
+        return [(TUNE.est_cost(m, c), m, ci, s) for m in METHODS for ci, c in enumerate(TUNE.config_list(m, 16, "ext")) for s in (1000, 1001)]
+
+    def test_partition_complete_and_disjoint(self):
+        jobs = self.jobs()
+        for n in (1, 3, 6, 8):
+            owner = TUNE.shard_jobs(jobs, n)
+            self.assertEqual(set(owner), {j[1:] for j in jobs})
+            self.assertEqual(set(owner.values()), set(range(n)))
+
+    def test_balanced_within_one_largest_job(self):
+        jobs = self.jobs()
+        cost = {j[1:]: j[0] for j in jobs}
+        for n in (3, 6, 8):
+            loads = [0.0] * n
+            for k, i in TUNE.shard_jobs(jobs, n).items():
+                loads[i] += cost[k]
+            self.assertLessEqual(max(loads) - min(loads), max(cost.values()))
+
+    def test_deterministic(self):
+        jobs = self.jobs()
+        self.assertEqual(TUNE.shard_jobs(jobs, 6), TUNE.shard_jobs(list(reversed(jobs)), 6))
+
+    def test_cost_model_orders_dqn_configs(self):
+        cheap = TUNE.est_cost("dqn", {"batch": 128, "train_every": 2})
+        heavy = TUNE.est_cost("dqn", {"batch": 256, "train_every": 1})
+        self.assertGreater(heavy, 2 * cheap * 0.9)
+        self.assertLess(TUNE.est_cost("pg", {}), cheap)
+
+
 if __name__ == "__main__":
     unittest.main()

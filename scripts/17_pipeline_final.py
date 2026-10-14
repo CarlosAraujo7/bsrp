@@ -11,11 +11,13 @@ Se a original continuar vencendo, o método não é rerodado (regra pré-registr
 
   python scripts/17_pipeline_final.py cb4wd
   python scripts/17_pipeline_final.py --ext cb4wd
+  python scripts/17_pipeline_final.py --ext cb4wd --seeds 0 1 2 3 4 --methods dqn      # fatia paralela
 """
 import os
 for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):   # BLAS de 1 thread: 2,5x mais rapido sob disputa de CPU
     os.environ.setdefault(_v, "1")
 
+import argparse
 import json
 import subprocess
 import sys
@@ -39,29 +41,38 @@ def done_pairs(path):
     return s
 
 
-def tuned_ready(path):
+def tuned_ready(path, methods):
+    """O ajuste dos métodos pedidos terminou? (permite iniciar o DQN sem esperar os demais métodos)"""
     try:
-        return len(json.load(open(path, encoding="utf-8"))) >= len(METHODS)
+        with open(path, encoding="utf-8") as f:
+            d = json.load(f)
+        return all(m in d for m in methods)
     except Exception:
         return False
 
 
 def main():
-    args = [x for x in sys.argv[1:] if x != "--ext"]
-    ext = "--ext" in sys.argv[1:]
-    inst = args[0]
+    ap = argparse.ArgumentParser()
+    ap.add_argument("instance")
+    ap.add_argument("--ext", action="store_true", help="pool estendido (P1): roda só os métodos cuja config escolhida difere da original")
+    ap.add_argument("--seeds", type=int, nargs="+", default=SEEDS, help="subconjunto de sementes (para rodar em fatias paralelas)")
+    ap.add_argument("--methods", nargs="+", default=METHODS, choices=METHODS, help="subconjunto de métodos (fatias paralelas)")
+    a = ap.parse_args()
+    ext, inst = a.ext, a.instance
     tuned_path = ROOT / "runs" / (f"tuned_ext_{inst}.json" if ext else f"tuned_{inst}.json")
     out = ROOT / "runs" / (f"final_ext_{inst}.jsonl" if ext else f"final_{inst}.jsonl")
-    while not tuned_ready(tuned_path):
+    while not tuned_ready(tuned_path, a.methods):
         time.sleep(60)
-    methods = METHODS
+    methods = list(a.methods)
     if ext:
-        orig = json.load(open(ROOT / "runs" / f"tuned_{inst}.json", encoding="utf-8"))
-        new = json.load(open(tuned_path, encoding="utf-8"))
-        methods = [m for m in METHODS if new[m]["cfg_id"] != orig[m]["cfg_id"]]
-        print(f"[{inst}] ext: rerodar {methods}; mantêm a original: {[m for m in METHODS if m not in methods]}", flush=True)
-    print(f"[{inst}] ajuste concluído; iniciando runs finais", flush=True)
-    for seed in SEEDS:                       # semente no laço externo: se for interrompido, todos os métodos têm mais sementes iguais
+        with open(ROOT / "runs" / f"tuned_{inst}.json", encoding="utf-8") as f:
+            orig = json.load(f)
+        with open(tuned_path, encoding="utf-8") as f:
+            new = json.load(f)
+        methods = [m for m in a.methods if new[m]["cfg_id"] != orig[m]["cfg_id"]]
+        print(f"[{inst}] ext: rerodar {methods}; mantêm a original: {[m for m in a.methods if m not in methods]}", flush=True)
+    print(f"[{inst}] ajuste concluído; iniciando runs finais (métodos {methods}, sementes {a.seeds})", flush=True)
+    for seed in a.seeds:                     # semente no laço externo: se for interrompido, todos os métodos têm mais sementes iguais
         for m in methods:
             if (m, seed) in done_pairs(out):
                 continue

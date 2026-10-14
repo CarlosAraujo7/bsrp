@@ -103,12 +103,47 @@ def config_list(method, n_cfg, space="orig"):
     cfgs = [DEFAULTS[method]] + [sample_cfg(method, rng) for _ in range(N_ORIG - 1)]
     return cfgs + ext_block(method, rng, n_cfg - N_ORIG)
 
+
 def run_one(inst, sc, method, cfg, seed, budget, eval_every):
     agent_kw = {k: v for k, v in cfg.items() if k not in TRAIN_KEYS}
     train_kw = {k: v for k, v in cfg.items() if k in TRAIN_KEYS}
     ag = T.make_agent(method, inst, seed, **agent_kw)
     info = T.train(inst, ag, seed, budget, sc["val"], eval_every, **train_kw)
     return info
+
+
+def est_cost(method, cfg):
+    """Custo relativo aproximado de uma execução (medido em 14/out: DQN 500k passos ≈ 7 min com batch/every = 64, ≈ 17 min com 256).
+    Serve só para equilibrar as fatias (--shard); não entra em nenhuma decisão."""
+    be = cfg.get("batch", 64) / cfg.get("train_every", 1)
+    return 3.6 + 0.057 * be if method == "dqn" else (2.0 + 0.01 * be if method == "linear" else 1.0)
+
+
+def shard_jobs(jobs, n_shards):
+    """Atribuição estática (LPT: maior custo primeiro, para a fatia menos carregada) de (custo, método, cfg_id, semente) a fatias."""
+    loads, owner = [0.0] * n_shards, {}
+    for c, m, ci, s in sorted(jobs, key=lambda j: (-j[0], j[1], j[2], j[3])):
+        k = int(np.argmin(loads))
+        loads[k] += c
+        owner[(m, ci, s)] = k
+    return owner
+
+
+def load_done(out):
+    done = {}
+    if out.exists():
+        with open(out, encoding="utf-8") as f:
+            for l in f:
+                if l.strip():
+                    r = json.loads(l)
+                    done[(r["method"], r["cfg_id"], r["seed"])] = r
+    return done
+
+
+def check_reuse(r, cfg, a, sc, inst, method, ci, seed):
+    """Reaproveita uma linha existente só se for exatamente a mesma execução."""
+    if r["cfg"] != cfg or r["budget"] != a.budget or r["val_digest"] != sc["val"].digest():
+        raise SystemExit(f"[{inst.name}] {method} cfg {ci} seed {seed}: linha existente não corresponde à config/orçamento/cenários atuais")
 
 
 def main():
@@ -121,35 +156,57 @@ def main():
     ap.add_argument("--eval-every", type=int, default=20_000)
     ap.add_argument("--space", choices=["orig", "ext"], default="orig",
                     help="ext: pool estendido (8 originais reaproveitadas de tune_<inst>.jsonl + novas); grava tuned_ext_<inst>.json")
+    ap.add_argument("--shard", default="0/1", help="i/N: executa só a fatia i de N das execuções pendentes (use com --fill-only)")
+    ap.add_argument("--fill-only", action="store_true",
+                    help="só executa/grava as execuções da fatia; NÃO escolhe a melhor config (rode depois sem --fill-only para escolher)")
     a = ap.parse_args()
+    shard_i, shard_n = map(int, a.shard.split("/"))
+    if shard_n > 1 and not a.fill_only:
+        raise SystemExit("--shard i/N com N > 1 exige --fill-only (a escolha da melhor config é feita depois, sobre o pool completo)")
     inst, sc = RP.get_bundle(a.instance)
     out = ROOT / "runs" / f"tune_{inst.name}.jsonl"           # log único: as 8 originais ficam intactas, as novas são anexadas
     best_path = ROOT / "runs" / (f"tuned_ext_{inst.name}.json" if a.space == "ext" else f"tuned_{inst.name}.json")
     best = json.load(open(best_path)) if best_path.exists() else {}
-    done = {}
-    if out.exists():
-        for l in open(out, encoding="utf-8"):
-            r = json.loads(l); done[(r["method"], r["cfg_id"], r["seed"])] = r
+    all_cfgs = {m: config_list(m, a.configs, a.space) for m in a.methods}
+
+    def execute(method, ci, cfg, seed):
+        t0 = time.time()
+        info = run_one(inst, sc, method, cfg, seed, a.budget, a.eval_every)
+        vf = float(np.mean([c["val"] for c in info["curve"][-2:]]))           # média dos 2 últimos pontos (reduz ruído)
+        r = {"instance": inst.name, "method": method, "cfg_id": ci, "cfg": cfg, "seed": seed, "budget": a.budget,
+             "space": "ext" if ci >= N_ORIG else "orig", "val_final": vf, "curve": info["curve"],
+             "seconds": round(time.time() - t0, 1), "val_digest": sc["val"].digest()}
+        RP.log(out, r)
+        print(f"[{inst.name}] {method:<12} cfg {ci} seed {seed}: val {vf:8.3f} ({time.time()-t0:.0f}s)", flush=True)
+        return r
+
+    if a.fill_only:                                            # modo fatiado: só preenche o log (várias fatias em paralelo)
+        jobs = [(est_cost(m, cfg), m, ci, s) for m in a.methods for ci, cfg in enumerate(all_cfgs[m]) for s in a.seeds]
+        owner = shard_jobs(jobs, shard_n)
+        mine = [j for j in sorted(jobs, key=lambda j: (-j[0], j[1], j[2], j[3])) if owner[j[1:]] == shard_i]
+        print(f"[{inst.name}] fatia {shard_i}/{shard_n}: {len(mine)} de {len(jobs)} execuções (custo relativo {sum(j[0] for j in mine):.0f})", flush=True)
+        for _, m, ci, s in mine:
+            r = load_done(out).get((m, ci, s))                 # relê o log: outra fatia/cadeia pode ter feito esta execução
+            if r is not None:
+                check_reuse(r, all_cfgs[m][ci], a, sc, inst, m, ci, s)
+                continue
+            execute(m, ci, all_cfgs[m][ci], s)
+        print(f"[{inst.name}] FILL-FIM fatia {shard_i}/{shard_n}", flush=True)
+        return
+
+    done = load_done(out)
     for method in a.methods:
-        cfgs = config_list(method, a.configs, a.space)
+        cfgs = all_cfgs[method]
         scores = []
         for ci, cfg in enumerate(cfgs):
             vals = []
             for seed in a.seeds:
                 if (method, ci, seed) in done:                   # reaproveita, mas só se for exatamente a mesma execução
                     r = done[(method, ci, seed)]
-                    if r["cfg"] != cfg or r["budget"] != a.budget or r["val_digest"] != sc["val"].digest():
-                        raise SystemExit(f"[{inst.name}] {method} cfg {ci} seed {seed}: linha existente não corresponde à config/orçamento/cenários atuais")
+                    check_reuse(r, cfg, a, sc, inst, method, ci, seed)
                     vals.append(r["val_final"])
                     continue
-                t0 = time.time()
-                info = run_one(inst, sc, method, cfg, seed, a.budget, a.eval_every)
-                vf = float(np.mean([c["val"] for c in info["curve"][-2:]]))       # média dos 2 últimos pontos (reduz ruído)
-                RP.log(out, {"instance": inst.name, "method": method, "cfg_id": ci, "cfg": cfg, "seed": seed, "budget": a.budget,
-                             "space": "ext" if ci >= N_ORIG else "orig", "val_final": vf, "curve": info["curve"],
-                             "seconds": round(time.time() - t0, 1), "val_digest": sc["val"].digest()})
-                vals.append(vf)
-                print(f"[{inst.name}] {method:<12} cfg {ci} seed {seed}: val {vf:8.3f} ({time.time()-t0:.0f}s)", flush=True)
+                vals.append(execute(method, ci, cfg, seed)["val_final"])
             scores.append(float(np.mean(vals)))
         b = int(np.argmax(scores))
         best[method] = {"cfg_id": b, "cfg": cfgs[b], "val_mean": scores[b], "all_val_means": scores, "n_configs": len(cfgs),
