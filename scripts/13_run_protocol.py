@@ -157,7 +157,7 @@ def cmd_learners(a):
         env = E.BSRPEnv(inst)
         tuned = {}
         if a.tuned:
-            tuned = json.load(open(ROOT / "runs" / f"tuned_{inst.name}.json", encoding="utf-8"))
+            tuned = json.load(open(a.tuned_file or ROOT / "runs" / f"tuned_{inst.name}.json", encoding="utf-8"))
         for method in a.methods:
             cfg = tuned[method]["cfg"] if method in tuned else {}
             train_kw = {k: v for k, v in cfg.items() if k in ("eps_decay_frac", "eps_end")}
@@ -168,6 +168,7 @@ def cmd_learners(a):
                 fe = T.final_eval(inst, agent, sc["test"])
                 rec = base_rec(inst, sc, "learner")
                 rec.update({"method": method, "seed": seed, "budget_steps": a.budget, "demand_scale": a.scale, "cfg": cfg or None,
+                            "cfg_id": tuned[method]["cfg_id"] if method in tuned else None,
                             "eval_every": a.eval_every, **info,
                             **{k: v for k, v in fe.items() if k != "test_rewards"},
                             "test_rewards": fe["test_rewards"].round(1).tolist(), **real_eval(env, agent, sc)})
@@ -196,6 +197,7 @@ def main():
             p.add_argument("--budget", type=int, default=150_000)
             p.add_argument("--eval-every", type=int, default=15_000)
             p.add_argument("--tuned", action="store_true", help="usa runs/tuned_<inst>.json (16_tune.py)")
+            p.add_argument("--tuned-file", default=None, help="com --tuned: outro arquivo de configs (ex.: runs/tuned_ext_<inst>.json)")
         p.set_defaults(fn=fn)
     a = ap.parse_args()
     a.fn(a)
