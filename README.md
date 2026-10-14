@@ -17,6 +17,10 @@ Estado: **lapidação em andamento** (início 2026-10-11). Ler primeiro: [`HANDO
 | `scripts/12_prepare_citibike.py` | zips do Citi Bike → fluxos de 30 min e matrizes O–D (`data/processed/`) |
 | `scripts/13_run_protocol.py` | executor: `scenarios`, `heuristics`, `learners` → `runs/*.jsonl` |
 | `scripts/14_analyze_runs.py` | análise estatística do protocolo → `tables/*.md` |
+| `scripts/15_real_data_checks.py`, `18_tuning_table.py` | checagens dos dados reais e tabela de configs ajustadas |
+| `scripts/16_tune.py`, `17_pipeline_final.py` | ajuste de hiperparâmetros e pipeline final (retomáveis) |
+| `HANDOFF.md`, `PROMPT_NOVO_CHAT.md` | **estado atual e prompt para um novo agente** (leia o HANDOFF primeiro) |
+| `tables/final_cb_wd.md` | **resultado principal** (10 sementes × 5 aprendizes × 3 escalas, sintético e dias reais) |
 | `scenarios/` | conjuntos fixos de validação (200) e teste (1000) por instância, com hash |
 | `runs/` | uma linha JSON por execução (commit, sementes, hashes, métricas) |
 | `data/` | **fora do git**: `live/` e `raw/tembici` (coleta), `processed/` (Citi Bike) |

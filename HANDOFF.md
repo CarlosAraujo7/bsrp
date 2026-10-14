@@ -1,119 +1,111 @@
-# HANDOFF — BSRP (pasta `BSRP ENIAC`)
+# HANDOFF — BSRP (v2, 2026-10-14) — documento autossuficiente para um novo agente Claude
 
-> Documento autossuficiente para abrir um **chat novo só deste projeto**. Contexto das 6 pesquisas: `../REVISAO_GERAL.md` (§7) e `../BRIEFING_CHATS.md`.
-> Data: 2026-10-11. Evidências: **[código]**, **[dados]**, **[web]**, **[inferência]**.
+> Pasta de trabalho: `C:\Users\vinic\OneDrive\Documentos\Novas pesquisas\BSRP ENIAC`. Idioma de trabalho com o usuário: **português**.
+> Este arquivo **substitui** o HANDOFF v1 (arquivado em `archive/HANDOFF_v1_2026-10-11.md`, parcialmente superado).
+> Leia, nesta ordem: este arquivo → `PROTOCOLO_RIGOR.md` → `DESVIOS.md` → `README.md`. Detalhes históricos: `04_experimentos.md` (legado auditado), `05_coleta_tembici.md`.
 
-## 0. Objetivo e destino
-Reorganizar o BSRP (rebalanceamento de bicicletas compartilhadas com RL) até nível de **evento nacional sólido** e, se os dados brasileiros permitirem, **periódico**.
-- **ENIAC 2026 já passou** (prazo 22/jun/2026; evento 19–22/out/2026 em Cuiabá) [web: bracis.sbc.org.br/2026/eniac]. Alvo: **ENIAC/BRACIS 2027** (chamada ainda não publicada — verificar).
-- Periódico (ex.: Transportation Research Part C, ITOR, Computers & OR) exige: dados reais com origem-destino, multi-veículo ou rebalanceamento dinâmico realista, e baselines da literatura. **Não é EJOR/CEC no estado atual.**
+## 0. Objetivo
+Lapidar o BSRP (rebalanceamento de bicicletas compartilhadas com 1 veículo, RL) para **ENIAC/BRACIS 2027** (chamada ainda não publicada em 2026-10-14; ENIAC 2026 fechou em 22/jun/2026; verificar `bracis.sbc.org.br`) e **avaliar** se há caminho para periódico (condicional; ver §6). O diferencial planejado é o dado brasileiro (Tembici, só estoque, sem O–D).
 
-## 1. O que é o projeto
-Rebalanceamento com **1 veículo** (capacidade 20), 32 passos de 30 min (06h–22h), 12 estações de Manhattan (Citi Bike, jan/2024). Q-learning tabular (estado por cluster, 4⁴×12×4×32 = 393.216 estados), 4 melhorias tabulares (A–E), DQN em numpy puro (26→64→64→60, replay, target, Double DQN), escalabilidade 4/8/12 estações, ablação do DQN, controle de aliasing, baselines threshold/rollout, script REINFORCE.
+## 1. Estado em uma página
+- **Protocolo de rigor v1 aprovado** pelo usuário (tag git `protocolo-v1`). Toda decisão que o protocolo não cobria ou que desviou dele está em `DESVIOS.md` (com a coluna "resultados vistos antes?"). **Registre no `DESVIOS.md` ANTES de rodar qualquer coisa nova.**
+- **Experimento principal concluído** em 3 instâncias calibradas em dados reais (`cb4wd`, `cb8wd`, `cb12wd`; dia útil): **10 sementes × 5 aprendizes × 500.000 passos**, hiperparâmetros ajustados em validação, comparados com heurísticas calibradas e com a política "parada", em 1000 cenários sintéticos compartilhados **e em 24 dias reais de teste**. Runs: `runs/final_<inst>.jsonl` (commit `a0c5930`, sem alterações pendentes). Análise: `tables/final_cb_wd.md`; configs: `tables/tuned_configs.md`.
+- Testes: `python -m unittest discover -s tests` → 16 OK (regressão **exata** contra o simulador legado, invariantes, CRN, reprodutibilidade por semente).
+- Coleta Tembici rodando por tarefa agendada (ver §7); ~3,5 dias coletados, 3 lacunas ≤ 14 min no Rio. **Instância Tembici ainda não construída.**
 
-Mapa: `01_escopo.md … 04_experimentos.md` · `scripts/{01_download,02_preprocess,03_collect_tembici_gbfs,04_simulator,05_qlearning,06_improved_qlearning,07_dqn,08_scaling,09_reinforce,10_baselines}` · `results/{qtable*.pkl,dqn_*.npz,scaling/,baselines/}` · `demand_profiles_*`, `station_selected_*`.
+### Resultados (reward = −demanda não atendida por dia; maior = melhor; média de 10 sementes)
+| Escala | parada | melhor heurística calibrada (por val) | tab. cluster | tab. estação | linear | policy gradient | **DQN (64-64)** |
+|---|---|---|---|---|---|---|---|
+| cb4wd — teste sintético | −46,9 | −24,5 | −43,0 | −40,4 | −37,6 | −37,7 | **−10,4** (IC95% −10,8; −10,1) |
+| cb8wd — teste sintético | −89,8 | −52,8 | −92,8 | −94,5 | −87,8 | −101,8 | **−32,0** (−32,8; −31,2) |
+| cb12wd — teste sintético | −131,3 | −80,5 | −136,1 | −137,9 | −130,0 | −124,9 | **−64,3** (−66,5; −62,1) |
+| cb4wd — 24 dias reais | −32,7 | −25,4 | −35,9 | −34,2 | −33,3 | −33,8 | **−9,0** |
+| cb8wd — 24 dias reais | −54,0 | −47,5 | −63,2 | −66,4 | −55,8 | −71,5 | **−19,6** |
+| cb12wd — 24 dias reais | −84,5 | −67,8 | −98,1 | −95,6 | −85,0 | −87,5 | **−45,1** |
 
-## 2. Estado real
-Experimentos prontos; **não há `paper/`**. *(Atualizado em 2026-10-12: git iniciado; coleta Tembici em andamento desde 2026-10-11 — ver §9b.)* `results/reinforce/` **não existe** (REINFORCE sem resultados). `baselines_8st.json` e `baselines_12st.json` só têm *threshold* (o *rollout* não terminou).
+- **C1 (DQN − melhor heurística):** +14,0 / +20,8 / +16,2 (sintético) e +16,4 / +28,0 / +22,8 (dias reais); t p < 1e-4, 10/10 sementes melhores, Wilcoxon p = 0,002 (mínimo possível com n = 10). Redução da demanda perdida do DQN vs parada: 78% / 64% / 51%; vs heurística: 57% / 39% / 20% (4/8/12 est., sintético).
+- **Escada de representação (C4–C6):** tabular (cluster ou estação) e linear **nenhum supera a melhor heurística calibrada**. Em relação à parada: em 4 est. (sintético) ficam entre a parada e a heurística (−37,6 a −43,0 contra −46,9 e −24,5); em 8 e 12 est. e em **todos** os dias reais ficam **≈ ou pior que a parada** (ex.: cb8wd tabular −92,8/−94,5 × parada −89,8). A rede neural domina com folga (C6 = +27 / +56 / +66). Policy gradient é instável (DP entre sementes 10–20). Não há "tabular por estação empata com o DQN" (tese do legado): **refutada**.
+- **O que o texto pode e não pode afirmar:** pode: "no simulador calibrado em Citi Bike 2024, uma rede 64-64 treinada com DQN reduz a demanda perdida em 20–57% vs a melhor heurística calibrada, também em dias reais não vistos; tabular e linear não superam a heurística calibrada (e, em 8–12 est., nem a política parada)". **Não pode** (ainda): que o DQN é ótimo; que vale com roteamento/vários veículos; que vale em Tembici; que o ganho é independente do espaço de busca (ver §5 P1).
 
-## 3. Achados críticos (verificados)
+## 2. Achados que mudaram a história (resumo; detalhes em `04_experimentos.md`, `tables/real_data_checks.md`, `DESVIOS.md`)
+1. **Legado (maio/2026) tinha defeitos graves:** 1 semente de treino; teste e seleção nas mesmas sementes; números de gulosa/aleatória não salvos; `unmet` sempre 0; ε não decaía sem replay; `np.random` global sem semente; Q-learning indexava ações pela posição na lista de válidas; referências erradas (3, corrigidas em `01_escopo.md`).
+2. **O DQN legado estava mal treinado** (−3,49 em 4 est. ≈ política parada). Um DQN com máscara no alvo e treino estável chega a −0,3 (instância legada), verificado também **dentro do simulador legado**.
+3. **Dado legado defeituoso:** chegadas ≈ 5× partidas era erro de pré-processamento (arquivo truncado); com Jan–Jun 2024 completos a razão é 0,995–1,012. A demanda legada ×3,5 valia 66–80 partidas/estação/dia contra ~**200** reais. Por isso as instâncias primárias agora são `cb*` (λ real, sem escala).
+4. **Referências corretas = parada + heurística calibrada em validação.** A aleatória é barra baixa (movimentos aleatórios pioram o sistema). Calibração importa (gulosa legada → calibrada: −2,25 → −1,13 na instância legada de 4 est.).
+5. **O modelo de Poisson superestima a dificuldade em 30–40%** vs dias reais (parada: sintético −47/−90/−131 × real −33/−54/−85).
+6. **Subsistema aberto:** só 2,0 / 3,1 / 4,5% das partidas (4/8/12 est.) terminam dentro da instância (O–D real) → ausência de conservação de bicicletas é aproximação razoável para esses tamanhos (evidência, não suposição).
+7. **Limitação estrutural do simulador:** todo deslocamento custa **exatamente 1 intervalo** (32 decisões/episódio sempre): não há roteamento nem restrição de tempo de viagem; o problema é "quanto e para onde mover a cada 30 min". Capacidade do veículo 20, deltas ∈ {−10,−5,0,5,10}.
+8. Ocupação inicial dos dias reais é desconhecida (usa-se 50% ± 2).
 
-**B1. Dados fracos** [dados]: 215.897 viagens de **14–31/jan/2024** (meia janela, inverno); o plano dizia jan–jun/2024. Perfis misturam dias úteis e fins de semana.
+## 3. Mapa do repositório
+| Caminho | O quê |
+|---|---|
+| `PROTOCOLO_RIGOR.md`, `DESVIOS.md` | regras do jogo (aprovadas) e registro de desvios/especificações |
+| `bsrp/env.py` | `Instance`, `Scenario(Set)` (CRN), `BSRPEnv` (dinâmica idêntica ao legado), `legacy_instance`, `sample_scenarios`, `legacy_scenarios` |
+| `bsrp/data.py` | `Flows` (Citi Bike), `calibrated_instance(n, flows, daytype)`, `real_scenarios` (replay de dias reais) |
+| `bsrp/policies.py` | `Stay`, `RandomPolicy`, `LegacyGreedy/Threshold` (portes exatos), `GreedyFamily` + grades 1–3, `ThresholdFamily`, `Rollout` (honesto: futuros amostrados do modelo; **implementado, não rodado em escala**) |
+| `bsrp/agents.py` | `QTabular` (cluster/estação), `DQN` (`hidden=()` = linear; flags `use_replay/use_target/double` para ablação), `PolicyGradient` (REINFORCE + baseline) |
+| `bsrp/train.py` | `SeedSequence` (4 fluxos independentes), treino em passos de ambiente, val periódica, `final_eval` |
+| `tests/` | 16 testes (G0) |
+| `scripts/12_prepare_citibike.py` | zips Citi Bike → `data/processed/citibike_2024/flows_od.npz` (fluxos 30 min + O–D só de semanas de treino) |
+| `scripts/13_run_protocol.py` | executor: `scenarios` / `heuristics` / `learners` (instâncias `4`, `legacy4x1.5`, `cb4wd`, `cb12we`, `cb4wdx1.5`…) |
+| `scripts/14_analyze_runs.py` | estatística do protocolo (IC sobre sementes, Holm, TOST, dias reais) → `tables/*.md` |
+| `scripts/15_real_data_checks.py`, `18_tuning_table.py`, `11_make_tables.py` | tabelas geradas |
+| `scripts/16_tune.py`, `17_pipeline_final.py` | ajuste de hiperparâmetros e pipeline final **retomáveis** |
+| `scripts/03_collect_tembici_gbfs.py` | coletor GBFS v3.0 (tarefa agendada) |
+| `scripts/01–10` | **legado** (não editar; usados nos testes de regressão) |
+| `scenarios/` | val (200) e test (1000) sintéticos por instância, com hash |
+| `runs/` | `final_*.jsonl`, `tune_*.jsonl`, `tuned_*.json`, `heuristics_*.jsonl`, pilotos |
+| `tables/` | `final_cb_wd.md` (principal), `tuned_configs.md`, `real_data_checks.md`, `pilot_*.md`, `legacy_results.md` |
+| `data/` (fora do git, mas no disco/OneDrive) | `live/` + `raw/tembici/` (coleta), `processed/citibike_2024/` (fluxos). Os zips do Citi Bike (3,7 GB) estavam no scratchpad da sessão anterior e **podem não existir mais**; refaça o download se precisar (S3 `tripdata/2024MM-citibike-tripdata.zip`, licença: NYCBS Data Use Policy) |
+| `archive/` | v1 do HANDOFF e de `04_experimentos.md` |
 
-**B2. Simulador** [código `scripts/04_simulator.py`]: chegadas e partidas Poisson **independentes por estação** (sem fluxo origem-destino, **sem conservação de bicicletas**); `DEMAND_SCALE = 3.5` arbitrário ("ajustado vs. dados reais" sem evidência); todo deslocamento custa ≥ 1 intervalo de 30 min; avaliação **no mesmo simulador** do treino, sem dias reais de teste.
+### Reproduzir
+```bash
+python -m unittest discover -s tests -v
+python scripts/13_run_protocol.py scenarios --instances cb4wd cb8wd cb12wd
+python scripts/13_run_protocol.py heuristics --instances cb4wd cb8wd cb12wd --skip-threshold --out runs/heuristics_cb_wd.jsonl
+python scripts/16_tune.py --instance cb4wd --methods dqn tab_station tab_cluster linear pg --configs 8 --seeds 1000 1001 --budget 200000
+python scripts/17_pipeline_final.py cb4wd         # 10 sementes x 5 métodos x 500k passos, pula o que já existe
+python scripts/14_analyze_runs.py --learners runs/final_cb4wd.jsonl runs/final_cb8wd.jsonl runs/final_cb12wd.jsonl \
+       --heuristics runs/heuristics_cb_wd.jsonl runs/heuristics_cb_wd_g3.jsonl --out tables/final_cb_wd.md
+```
+Tempos (máquina compartilhada, BLAS de 1 thread): DQN 500k passos ≈ 5–6 min por run (10 sementes ≈ 1 h por escala); linear 2–3 min; PG e tabular ≈ 1–2 min. Ajuste do DQN (8 configs × 2 sementes × 200k) ≈ 1–2 h por escala.
 
-**B3. Uma única semente de treino (42)** [código `08_scaling.py:65`, `07_dqn.py:42`]. Os testes de Welch (300 episódios de avaliação) medem a variância do simulador, **não do algoritmo** (pseudorreplicação). "DQN > gulosa (p = 0,001)" e "toda componente é necessária" precisam de ≥10 sementes de treino com IC.
+## 4. Regras de conduta (o que o usuário aprovou e espera)
+1. **Rigor antes de resultado:** unidade de análise = semente de treino; escolha de checkpoint = último; ajuste e escolha de "melhor" só em **validação**; teste tocado uma vez; sem p-valor sobre episódios; "empata" só com TOST (δ = 0,5); reportar resultados negativos. Cada execução → uma linha em `runs/*.jsonl` com commit e flag *dirty*; **commite antes de rodar** para o hash ficar limpo.
+2. **Honestidade:** declare incertezas e limitações; corrija o que errar (houve correções registradas); não escreva "DQN supera X" sem a escala, o número de sementes e o IC.
+3. **Autorização:** o usuário aprovou explicitamente: tarefa agendada de coleta, download Citi Bike, protocolo. **Peça antes de**: enviar mensagens/e-mails por ele (o e-mail à Tembici é rascunho em `docs/email_tembici_rascunho.md`, **envio é do usuário**), publicar, baixar dados novos, criar tarefas persistentes, apagar dados.
+4. Nunca use o e-mail do usuário em requisições externas (User-Agent, URLs); UA do coletor é neutro.
+5. Não encerre processos que não sejam seus (a máquina roda jobs de outros projetos do usuário).
 
-**B4. Vazamento leve na seleção de checkpoint** [código]: o `eval_r` periódico usa `SEED_EVAL = 123` (`07_dqn.py:43`; `08_scaling.py:83`) e a avaliação final inclui a semente 123. A curva do DQN é instável: em 4 estações `eval_r` varia −1,3 (ep. 500) → −5,4 (ep. 3.500) → −1,5 (ep. 5.000), e o resultado final é −3,63.
+## 5. O que falta — prioridades e critérios de aceite
+**P1 — Espaço de busca do DQN (antes de qualquer afirmação de magnitude).** A config vencedora do DQN é a mesma nas 3 escalas e tem **3 hiperparâmetros no máximo do espaço** (`target_sync=4000`, `batch=128`, `buffer=50000`; `lr=4,43e-4`, `train_every=2`). Estender (`target_sync` até 16000, `batch` 256, `buffer` 200000, `train_every` 1, `lr`) com o **mesmo orçamento de configs para todos os métodos** (registrar em DESVIOS) e rerodar o DQN final. Faça o mesmo para qualquer método cujo ótimo caia na borda. Critério: ótimo no interior do espaço ou ganho marginal documentado. Obs.: nas escalas 8/12 o ajuste foi decisivo (+18,6 e +22,0 de val); com parâmetros padrão o DQN perde para a heurística em 12 est.
+**P2 — Ablação do DQN (protocolo C7–C9, ainda não feita).** Variantes `use_replay=False`, `use_target=False`, `double=False` e "vanilla" (as três), **mesmo cronograma de ε** (em `train()` o ε já decai por passos para todos; o bug do legado não existe aqui), ≥ 10 sementes, na instância `cb12wd` (e `cb4wd`). Adicionar aliases de método no runner (`make_agent(..., **kw)` já aceita as flags). Só afirme "componente necessária" se o IC da diferença pareada por semente excluir 0.
+**P3 — Sensibilidade (protocolo §8.1, redefinida em DESVIOS).** `cbNwdxK` com K ∈ {0,5; 0,75; 1,5} e `cb*we` (fim de semana); arm legado com escala {1,5; 2,5; 3,5; 5}. Os **pesos dos agentes não foram salvos** → é preciso retreinar. Desenho reduzido sugerido (registrar antes): DQN ajustado × 5 sementes + gulosa calibrada + parada, em `cb4wd` e `cb12wd`. Reporte onde o sinal da conclusão muda.
+**P4 — Baselines faltantes.** (a) `Rollout(base=melhor heurística, h=1..2, K=4)` em todas as escalas (código pronto, `tests/test_learners.py` cobre); (b) **uma referência da literatura** adaptada e chamada "adaptação", não "reprodução": Seo et al. (2022, ADP/RL, docas) ou Liang et al. (2024, arXiv:2402.03589, single- vs dual-policy). Leia os dois e verifique o que é reproduzível. (c) Família `threshold` nas instâncias `cb*` (foi pulada com `--skip-threshold`; dominada pela gulosa nas legadas).
+**P5 — Tembici (diferencial brasileiro).** Construir `scripts/19_prepare_tembici.py`: snapshots (`data/live` + `data/raw/tembici`, concatenar e deduplicar por `(station_id, t)`; **tempo da observação = `feed_ts`**) → fluxo líquido por estação e 30 min (diferença de estoque; chegadas e partidas **não são separáveis** e reposição por caminhão aparece como salto |Δ|≥5) → instância Rio/SP (escolher ~12 estações por volume em semanas de treino) + replay de fluxo líquido real. **Hold-out já definido: última semana completa seg–dom da janela; val = semana anterior; calendário marcado (12/out, 2/nov, 15/nov; 2º turno 25/out a confirmar)**. A coleta começou em 2026-10-11 (domingo); a 1ª semana completa é 12–18/out; meta ≥ 4 semanas (até ~8/nov), ideal 8–12. Portão G3: o simulador reproduz distribuição horária de fluxo líquido e ocupação em dias de hold-out dentro de tolerância **fixada antes** de ver o hold-out; senão Tembici vira estudo descritivo. **Licença/termos não verificados**: não redistribuir dados brutos; e-mail ao feed aguardando o usuário.
+**P6 — Resultados e artigo.** Gerar figuras por script (curvas de aprendizado com IC sobre sementes — `curve` está em cada linha do `jsonl`; barras com IC por escala; escada de representação; sintético × dias reais). Escrever `06_resultados.md` (sem números digitados à mão) e o artigo no formato ENIAC/BRACIS 2027 (verificar a chamada). Revisar referências (item 5 de `01_escopo.md` **não verificado**: "Efficient Inventory Routing for BSS (2024)").
+**P7 — Realismo para periódico (só se P1–P6 ok).** Roteamento/tempo de viagem reais, mais de um veículo, baseline da literatura reproduzido, ≥ 3 sistemas reais. Veja `PROTOCOLO_RIGOR.md` §11.
 
-**B5. A tese "DQN é necessário" fica fraca pelos próprios dados** [dados `04_experimentos.md §12`, `results/scaling/ql_control.json`]:
+## 6. Checklist de nível de publicação (estado)
+- [x] ≥ 10 sementes de treino; IC; testes sobre sementes (instâncias `cb*wd`)
+- [x] Validação/teste separados; dias reais de teste
+- [~] Simulador calibrado em dados e conservação justificada com O–D (**sem** roteamento/tempo de viagem)
+- [x] Tabular justo (por estação) e heurísticas calibradas (grades com ótimo interior após a grade 3, salvo o que P1 revelar)
+- [ ] ≥ 1 baseline da literatura de BSRP (P4)
+- [~] Dados brasileiros (coleta em andamento; instância não construída) (P5)
+- [~] Documentação sem números conflitantes; referências verificadas (3 corrigidas; 1 pendente)
+- [ ] Ablação (P2); sensibilidade (P3)
 
-| Estações | Gulosa | DQN | Q-learning (cluster) | Q-learning (por estação) |
-|---|---|---|---|---|
-| 4 | −1,98 ⚠ | −3,49 | −7,13 (10k ep) | −3,73 (**18k** ep) |
-| 8 | −3,80 ⚠ | −6,76 | −13,92 (3,5k ep) | — |
-| 12 | −5,57 ⚠ | **−3,20** | −12,23 (20k ep) | — |
+## 7. Ambiente (armadilhas reais, todas já vividas)
+- **O shell do Claude Code escreve num overlay privado de `AppData\Local`**; só a pasta do projeto e o scratchpad são compartilhados com o Windows real. Nunca rode o coletor "de verdade" nem guarde dados em AppData a partir do shell.
+- **Coleta Tembici:** tarefa agendada `BSRP-Tembici-GBFS` (`pythonw scripts\03_collect_tembici_gbfs.py --once` a cada 5 min, prioridade 4, só com o usuário logado; **notebook desligado = lacuna**). Gerenciar: `Get-ScheduledTaskInfo -TaskName BSRP-Tembici-GBFS`; pausar `Disable-ScheduledTask`; remover `Unregister-ScheduledTask`. Qualidade: `python scripts/03_collect_tembici_gbfs.py --analyze`. Dados: `data/live/<cidade>/AAAA-MM-DDTHH.csv` (hora corrente) → `data/raw/tembici/` (`.csv.gz`); dias iniciais em `<cidade>/2026-10-11.csv.gz`, `2026-10-12_overlay.csv.gz`, `2026-10-12_real.csv.gz`.
+- **CPU compartilhada** com jobs pesados de outros projetos do usuário (≈ 8 workers) e memória virtual apertada: use ≤ 3 processos meus; **sem pandas nos runners** (pode crashar por falta de commit); os executores já fixam `OPENBLAS_NUM_THREADS=1` (2,5× mais rápido sob disputa).
+- Processos longos: `Start-Process python -ArgumentList "-I","scripts/<x>.py",... -WindowStyle Hidden -RedirectStandardOutput runs\x.out`. Morrem se o notebook desligar; `16_tune.py` e `17_pipeline_final.py` pulam o que já está gravado — relance.
+- `| Out-String` bufferiza a saída até o fim do job; para acompanhar, leia `runs/*.jsonl`. `sleep` longo é bloqueado; use Monitor (expira em 30 min).
+- Console Windows é cp1252: use `sys.stdout.reconfigure(errors="replace")` ou grave em arquivo UTF-8. `python -I` ignora variáveis `PYTHON*`.
+- Git local (sem remoto); identidade já configurada; commits terminam com `Co-Authored-By: Claude ...`. Dados em `data/` e `*.pkl` não são versionados.
 
-> ⚠ **Corrigido em 2026-10-12:** os valores de gulosa/aleatória **não estão em nenhum JSON** (só stdout); a única gulosa salva é −4,60 (12 est., sem. 123). O −3,73 é com 18k ep; **com orçamento igual (10k)** o `ql_control.json` dá por-estação −5,35 × cluster −6,15 (Δ = 0,80, EP ≈ 0,54 só de simulador). Threshold salva: 4 est. −2,08; 8 est. −5,26; 12 est. −6,97. Ver `04_experimentos.md` §3.
-
-Gulosa vence o DQN em 4 e 8 estações; só em 12 o DQN vence. ~~Em 4 estações o tabular com estado por estação empata com o DQN~~ → **não demonstrado** (orçamentos 18k × 5k ep; sem TOST; 1 semente). O Q-learning "original" usa estado agregado por cluster, que não distingue qual estação do cluster está vazia embora as ações escolham estações — é um adversário construído para perder.
-
-**B6. Narrativas conflitantes no mesmo documento** [leitura]: §4 atribui a falha à complexidade amostral (0,33 atualizações/par; "≈600k episódios"); §12.6 à *aliasing* por cluster; §10.2 interpreta "corrigir aliasing de ações piorou" como benefício do espaço variável (explicação não testada). O controle §12.6 varia ao mesmo tempo resolução, tamanho de espaço e episódios (o JSON registra 10k × 18k, não 20k × 18k; e em 4 estações os dois espaços têm o mesmo tamanho, 8.192).
-
-**B7. Baselines incompletos e trabalho não documentado** [dados]: *rollout* só em 4 estações; REINFORCE sem resultados e ausente de `04_experimentos.md`; a *threshold* é pior que a gulosa em 12 estações (−6,97 × −5,57).
-
-**B8. Números inconsistentes no texto**: aleatória = −15,6 / −14,5 / −14,21 conforme a tabela; "+64,1%" vs. "+61,4%"; "4 estações = top-1 por cluster (2 clusters)": **a instância de 4 estações tem 2 clusters × 2 estações** (`station_selected_4.csv`), logo o espaço tabular por cluster é 8.192 (não 131.072) — **igual** ao por-estação binário (8.192). (Correção de 2026-10-12: o texto original deste item dizia "quando há 4 clusters", o que está errado para a instância de 4.)
-
-**B9. Referência errada** [web]: "Pan et al. (2024), arXiv:2402.03589" — autores reais: **Liang, Liu, Jena, Lodi, Vidal** (*Single- vs. Dual-Policy Reinforcement Learning for Dynamic Bike Rebalancing*). Conferir as demais (Seo et al. 2022; Liu et al. 2018; Chiariotti et al. 2019).
-
-## 4. O que está sólido (reaproveitar)
-Pipeline de dados e seleção de estações; simulador (como base); infraestrutura de treino/avaliação multi-seed (a estender); a observação empírica de que a representação de estado decide entre tabular e profundo é **real e interessante** (B5).
-
-## 5. Plano de lapidação (ordem e critérios de aceite)
-1. **B0 – Higiene (1 dia).** `git init`; consolidar `04_experimentos.md` (uma narrativa, números únicos, tabelas geradas por script).
-2. **B1 – Coleta Tembici AGORA.** Rodar `scripts/03_collect_tembici_gbfs.py` (verificar endpoints GBFS e estrutura v3.0); coletar ≥4 semanas a cada 5–15 min. É o diferencial brasileiro e leva semanas — não adie.
-3. **B2 – Rigor mínimo.** ≥10 sementes de treino; sementes de validação e de teste **separadas**; checkpoint escolhido só na validação; IC 95%; teste sobre sementes (não sobre episódios).
-4. **B3 – Simulador.** Fluxo O–D com conservação de bicicletas (ou justificar a simplificação); calibrar `DEMAND_SCALE` contra ocupação real; separar dia útil × fim de semana; **dias reais de teste** (hold-out); mais de 1 mês de dados.
-5. **B4 – Baselines.** Q-learning tabular **por estação** (justo), gulosa/threshold **calibradas** (grid), *rollout* em todas as escalas, REINFORCE/PPO/A2C, e uma referência da literatura (ex.: política de Liang et al. 2024 adaptada, ou ADP de Seo et al. 2022).
-6. **B5 – Reenquadramento.** "Quando a representação de estado decide entre tabular e profundo no BSRP" é mais defensável que "tabular falha, DQN resolve".
-7. **B6 – Escrita.** Artigo no formato do evento-alvo; figuras (curvas com IC, heatmap de escala, ablação) geradas por script.
-
-## 6. Checklist de nível de publicação
-- [ ] ≥10 sementes de treino; IC; testes sobre sementes
-- [ ] Validação/teste separados; dias reais de teste
-- [ ] Simulador justificado (O–D/conservação) e calibrado com dados
-- [ ] Tabular justo (por estação) e heurísticas calibradas
-- [ ] ≥1 baseline da literatura de BSRP
-- [ ] Dados brasileiros (Tembici) ao menos como estudo de caso
-- [ ] Documentação sem números conflitantes; referências verificadas
-
-## 7. Armadilhas
-- Não escreva "DQN supera a gulosa" sem dizer que só ocorre em 12 estações e com 1 semente.
-- Não mantenha a narrativa "falta de amostras" **e** "aliasing" ao mesmo tempo.
-- Não assuma os endpoints GBFS do Tembici sem testá-los (podem ter mudado).
-
-## 8. Não verificado
-Endpoints GBFS do Tembici; a licença/uso permitido dos dados; se a 2ª metade de jan/2024 é representativa; chamada do ENIAC/BRACIS 2027 (prazos).
-
-## 9b. Atualização da sessão de 2026-10-11/12 (B0, B1, B2-proposta)
-
-**Feito:**
-- **B0:** `git init` + commit-base (estado recebido, 75 arquivos; `.pkl` fora, hashes em `results/MANIFEST_pkl.sha256`). `04_experimentos.md` reescrito (v2; v1 em `archive/`), com **auditoria de 21 afirmações** (§3) e tabelas geradas por `scripts/11_make_tables.py` → `tables/legacy_results.md`. Referências do `01_escopo.md` corrigidas (**3 erros**, não 1: "Pan 2024"→Liang et al.; "Liu 2018"→Pan et al. (AAAI 2019, bicicleta sem doca); Chiariotti: título e ano (2020, ACM TAAS)). Item 5 da lista segue **não verificado**.
-- **B1:** endpoints GBFS **v3.0** verificados nas 5 cidades (v2.x dá 404). Coletor reescrito (`03_collect_tembici_gbfs.py` v2; o original usava campos v2, exigia `pyarrow` ausente e só gravava na virada do dia). Coleta rodando desde 2026-10-11 ~10:27, 5 cidades, 300 s, sem lacunas nas primeiras ~15 h. Detalhes, esquema e riscos em `05_coleta_tembici.md`.
-- **B2:** `PROTOCOLO_RIGOR.md` (**proposta; aguarda aprovação; nada novo foi executado**).
-
-**Achados novos (além de B1–B9):**
-- **B10.** Chegadas do simulador reescaladas por 0,15–0,26 para igualar partidas; originais ≈ 5,5× as partidas. O desequilíbrio líquido real não está na calibração.
-- **B11.** Bugs: `unmet` do DQN sempre 0,0; ε não decai em `use_replay=False` (afeta a ablação); ambiente e exploração com a mesma semente 42; `scripts/ql_control.py` não existe.
-- **B12.** Ablação: dois conjuntos de JSON coexistem (`abl_*.json` × `ablation_9500ep.json`), protocolo de treino do "Full" ≠ das variantes.
-- **B13.** Orçamentos desiguais entre métodos (3,5k / 5k / 9,5k / 10k / 20k ep) e DQN de 8 estações avaliado em 6 checkpoints nas mesmas sementes; critério de `dqn_8st_best.npz` não registrado.
-- **B14.** GBFS **não tem viagens**: Tembici dá só fluxo líquido (sem O–D). Isso limita o caminho a periódico.
-- **B15.** Licença/termos da Tembici **não verificados** (feed sem `terms_url`); não redistribuir dados brutos.
-- **B16 (meu erro, corrigido):** num script de sondagem usei o e-mail do usuário no `User-Agent` de 5 requisições à Tembici/Lyft; o coletor usa UA neutro.
-
-**Atualização de 2026-10-12 (tarde):** o usuário autorizou o Agendador de Tarefas. Tarefa **`BSRP-Tembici-GBFS`** criada (`--once` a cada 5 min, prioridade 4, só com o usuário logado). Três problemas descobertos e corrigidos ao ativá-la:
-- **B17.** O Agendador roda tarefas com prioridade 7 (abaixo do normal); com a CPU a 100% por outros jobs, a coleta morria de fome (coletas de 06:40 e 06:45 de 12/out perdidas). Prioridade fixada em 4.
-- **B18.** **O shell do Claude escreve num overlay privado de `AppData\Local`**; a tarefa (mundo real) e eu víamos arquivos diferentes com o mesmo caminho. Dados resgatados para `data/raw/tembici/<cidade>/2026-10-12_{overlay,real}.csv.gz`. O diretório vivo passou a ser `data/live/` (compartilhado), em segmentos horários. **Nunca rodar o coletor de verdade pelo shell da sessão.**
-- **B19.** O coletor checava o cadastro das estações antes de coletar (atraso de ~1 min) e coletava as cidades em série; agora coleta primeiro e em paralelo.
-Detalhes em `05_coleta_tembici.md` §3–§4 e §6.
-
-**Pendências que dependem do usuário:** confirmar a aprovação de `PROTOCOLO_RIGOR.md` (o "Aprovado" de 12/out foi dado junto com o pedido da tarefa agendada); decidir se escreve ao contato do feed pedindo autorização; autorizar o download de ≥ 3 meses de Citi Bike; confirmar o hold-out Tembici (última semana completa). **Ambiente:** a máquina roda outros jobs pesados (memória virtual quase no limite); evitar `pandas` nos runners.
-
-## 9c. Atualização de 2026-10-12/13 — protocolo em execução (leia isto antes de §3, que ficou parcialmente desatualizado)
-
-Estado: protocolo v1 **aprovado** (tag `protocolo-v1`), pacote `bsrp/` + 16 testes (G0 ok: regressão exata contra o legado), Citi Bike Jan–Jun 2024 extraído (`data/processed/citibike_2024/`), instâncias calibradas em dados reais, ajuste de hiperparâmetros e experimento final em execução. **Toda decisão/desvio está em `DESVIOS.md`; resultados em `runs/*.jsonl`, tabelas em `tables/`.**
-
-Achados que **substituem** conclusões de §3:
-- **B20.** O DQN legado estava mal treinado: um DQN com máscara no alvo, buffer reprodutível e treino estável (mesma rede 64-64) chega a **−0,3** em 4 est. (parada −3,4; gulosa calibrada −1,1), verificado também **dentro do simulador legado**. A tese "tabular por estação empata com o DQN" (B5) cai: tabular e linear ficam *pior que a política parada* com o mesmo orçamento; a rede neural domina.
-- **B21.** A política **parada** e a **gulosa calibrada em validação** são as referências corretas. A aleatória é barra baixa porque movimentos aleatórios pioram o sistema. Calibração importa muito (gulosa legada −2,25 → calibrada −1,13 em 4 est. legado).
-- **B22.** Dado legado defeituoso: chegadas ≈ 5× partidas era defeito do pré-processamento; com Jan–Jun completos, chegadas ≈ partidas (0,995–1,012). O demanda legada ×3,5 dava 66–80 partidas/estação/dia contra ~**200** reais. **Instâncias primárias passaram a ser `cb4wd/cb8wd/cb12wd`** (λ real, sem escala), com teste adicional em **dias reais** de teste. `tables/real_data_checks.md`.
-- **B23.** O modelo de Poisson **superestima a dificuldade** em 30–40% em relação a dias reais (parada: sintético −47/−90/−131 × real −33/−54/−85 em 4/8/12 est.).
-- **B24.** Só 2,0/3,1/4,5% das partidas terminam dentro da própria instância (O–D): subsistema aberto; sem conservação é uma aproximação justificada para esses tamanhos.
-- **B25 (limitação do simulador).** Todo deslocamento custa exatamente 1 intervalo em 4/8/12 estações (32 decisões por episódio sempre): **não há restrição de roteamento nem de tempo de viagem**; o problema é de "quanto e para onde mover" a cada 30 min. Para periódico isso precisa mudar (frota/rotas/tempo de viagem realistas).
-- **B26.** Ocupação inicial dos dias reais é desconhecida nos dados de viagem (usa-se 50% ± 2): limitação declarada.
-- **Resultados parciais (legacy8/12, padrão, 300 mil passos):** DQN vence a gulosa calibrada em 4 e 8 estações, mas **perde em 12** (−3,8 × −2,0), ainda sem ajuste. Em `cb4wd` o DQN corta ~45% da demanda perdida da melhor gulosa (−13 × −24,5; dias reais −13 × −25,4).
-
-Pendências do usuário: enviar o e-mail à Tembici (`docs/email_tembici_rascunho.md`).
-
-## 9. Prompt inicial sugerido para o chat novo
-> Diretório de trabalho: `C:\Users\vinic\OneDrive\Documentos\Novas pesquisas\BSRP ENIAC`. Leia `HANDOFF.md` e `../REVISAO_GERAL.md` (§7). Objetivo: lapidar o BSRP para ENIAC/BRACIS 2027 (e avaliar se há caminho para periódico). Comece por B0 e B1 (higiene + coleta Tembici) e proponha o protocolo de rigor (B2) antes de rodar qualquer experimento novo.
+## 8. Não verificado / pendente do usuário
+Licença e termos da Tembici; chamada ENIAC/BRACIS 2027 (prazos); item 5 das referências; **envio do e-mail à Tembici** (`docs/email_tembici_rascunho.md`); manter o notebook ligado e logado durante a coleta.

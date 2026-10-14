@@ -11,3 +11,7 @@ data/
 # Temporários
 *.tmp
 .venv/
+
+# logs de processos em segundo plano
+runs/*.out
+runs/*.err
