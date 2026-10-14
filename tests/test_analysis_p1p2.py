@@ -158,6 +158,24 @@ class TestAnalysisP3(unittest.TestCase):
         self.assertNotIn("cb4wdx0.5:", txt.split("Onde a conclusão muda")[1])
         self.assertIn("(pendente)", txt)                                       # variantes ainda sem execuções
 
+    def test_p3_distinguishes_worse_from_not_significant(self):
+        dump(self.tmp / "heuristics_sens_a.jsonl",
+             [{"instance": "cb4wdx0.75", "method": "stay", "test_mean": -10.0},
+              {"instance": "cb4wdx0.75", "method": "greedy_cal", "test_mean": -4.0, "val_table": {"c": -4.0}}])
+        dump(self.tmp / "sens_cb4wdx0.75.jsonl", [{"instance": "cb4wdx0.75", "method": "dqn", "seed": s, "test_mean": -5.0 + 0.05 * s} for s in range(5)])
+        txt = "\n".join(AN.p3_report(self.tmp, bases=("cb4wd",)))
+        self.assertIn("cb4wdx0.75: o DQN é SIGNIFICATIVAMENTE PIOR", txt)
+        self.assertNotIn("cb4wdx0.75: C1 NÃO é significativo", txt)
+
+    def test_p3_reduction_is_not_reported_when_heuristic_is_near_zero(self):
+        dump(self.tmp / "heuristics_sens_a.jsonl",
+             [{"instance": "legacy4x1.5", "method": "stay", "test_mean": -0.4},
+              {"instance": "legacy4x1.5", "method": "greedy_cal", "test_mean": -0.1, "val_table": {"c": -0.1}}])
+        dump(self.tmp / "sens_legacy4x1.5.jsonl", [{"instance": "legacy4x1.5", "method": "dqn", "seed": s, "test_mean": -0.2 + 0.01 * s} for s in range(5)])
+        row = next(l for l in AN.p3_report(self.tmp, bases=("cb4wd",)) if "`legacy4x1.5`" in l)
+        self.assertIn("n/d (heurística ≈ 0)", row)
+        self.assertNotIn("%", row)
+
     def test_p3_reduction_and_c1_values(self):
         row = next(l for l in AN.p3_report(self.tmp, bases=("cb4wd",)) if "`cb4wdx0.5`" in l)
         cells = [c.strip() for c in row.split("|")]

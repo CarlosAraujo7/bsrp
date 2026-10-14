@@ -322,10 +322,13 @@ def p3_report(runs, bases=("cb4wd", "cb12wd")):
             beaten = [m for m in ("linear", "tab_station", "tab_cluster") if by[m] and means[m] > h]
             c1_ok = bool(lo > 0)
             L.append(f"| {label} (`{name}`) | {len(x)} | {fmt(stay)} | {fmt(h)} ({bh}) | {fmt(x.mean())} [{fmt(ci_t(x)[0])}; {fmt(ci_t(x)[1])}] | "
-                     f"{fmt(d.mean())} [{fmt(lo)}; {fmt(hi)}]{'' if c1_ok else ' ⚠'} | {fmt(100 * red, 0)}% | "
+                     f"{fmt(d.mean())} [{fmt(lo)}; {fmt(hi)}]{'' if c1_ok else ' ⚠'} | {(fmt(100 * red, 0) + '%') if abs(h) >= 0.5 else 'n/d (heurística ≈ 0)'} | "
                      + " | ".join(fmt(means[m]) + (" ⚠" if m in beaten else "") for m in ("linear", "tab_station", "tab_cluster")) + " |")
             if not c1_ok:
-                flips.append(f"{name}: C1 NÃO é significativo (DQN − heurística = {fmt(d.mean())} [{fmt(lo)}; {fmt(hi)}])")
+                if hi < 0:
+                    flips.append(f"{name}: o DQN é SIGNIFICATIVAMENTE PIOR que a melhor heurística (DQN − heurística = {fmt(d.mean())} [{fmt(lo)}; {fmt(hi)}])")
+                else:
+                    flips.append(f"{name}: C1 NÃO é significativo (DQN − heurística = {fmt(d.mean())} [{fmt(lo)}; {fmt(hi)}])")
             if beaten:
                 flips.append(f"{name}: {', '.join(beaten)} supera(m) a melhor heurística")
             if name.endswith("we") and "real_test_mean" in H.get(bh, {}) and all("real_test_mean" in r for r in by["dqn"].values()):
