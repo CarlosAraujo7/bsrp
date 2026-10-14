@@ -7,9 +7,10 @@
 * Ordem: finais antes da ablação; dentro de cada tipo, a mais cara primeiro (balanceia o fim da fila).
 * Nº de trabalhadores: `--workers`, sobrescrito a cada ciclo pelo inteiro em runs/_q/WORKERS (se existir). `runs/_q/STOP`
   = não inicia novas execuções e sai quando as em curso terminarem. Falhou 2 vezes → desiste daquela execução e segue.
-* Os reruns finais só entram para métodos cuja config escolhida em validação difere da original (regra do DESVIOS.md).
+* `sens` (P3, DESVIOS.md 2026-10-14): 4 aprendizes × 5 sementes × variantes de cb4wd/cb12wd e braço legado de 4 est., com a config\n  escolhida no P1 na escala-base; só entram instâncias cujos cenários val/test já existem em scenarios/.\n* Os reruns finais só entram para métodos cuja config escolhida em validação difere da original (regra do DESVIOS.md).
 
   python scripts/22_queue.py --kinds finals ablation --workers 4
+  python scripts/22_queue.py --kinds sens --instances cb4wd cb12wd --workers 4      # P3: sensibilidade (runs/sens_<instância>.jsonl)
 """
 import os
 for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
@@ -31,12 +32,19 @@ BUDGET, EVAL_EVERY = 500_000, 50_000
 INSTANCES = ("cb4wd", "cb8wd", "cb12wd")
 ABL_INSTANCES = ("cb12wd", "cb4wd")
 ABL_VARIANTS = ("noreplay", "notarget", "nodouble", "vanilla")
+# P3 (sensibilidade; DESVIOS.md 2026-10-14): escala-base -> [(especificação da instância, nome da instância)]
+SENS = {"cb4wd": [("cb4wdx0.5", "cb4wdx0.5"), ("cb4wdx0.75", "cb4wdx0.75"), ("cb4wdx1.5", "cb4wdx1.5"), ("cb4we", "cb4we"),
+                  ("legacy4x1.5", "legacy4x1.5"), ("legacy4x2.5", "legacy4x2.5"), ("4", "legacy4"), ("legacy4x5", "legacy4x5")],
+        "cb12wd": [("cb12wdx0.5", "cb12wdx0.5"), ("cb12wdx0.75", "cb12wdx0.75"), ("cb12wdx1.5", "cb12wdx1.5"), ("cb12we", "cb12we")]}
+SENS_METHODS = ("dqn", "linear", "tab_station", "tab_cluster")
+SENS_SEEDS = tuple(range(5))
+KIND_RANK = {"finals": 0, "sens": 1, "ablation": 2}
 
 
 @dataclass
 class Job:
     key: tuple
-    kind: str            # "finals" | "ablation"
+    kind: str            # "finals" | "sens" | "ablation"
     cost: float          # custo relativo (só para ordenar)
     cmd: list
     tmp: Path
@@ -70,6 +78,22 @@ def build_jobs(root, insts=INSTANCES, kinds=("finals", "ablation")):
         if not (p_o.exists() and p_e.exists()):
             continue
         orig, ext = load_json(p_o), load_json(p_e)
+        if "sens" in kinds and inst in SENS:
+            for spec, name in SENS[inst]:
+                if not all((root / "scenarios" / f"{k}_{name}.npz").exists() for k in ("val", "test")):
+                    continue                     # cenários ainda não gerados (evita corrida na geração preguiçosa)
+                target = root / "runs" / f"sens_{name}.jsonl"
+                done = {(r["method"], r["seed"]) for r in read_rows(target)}
+                for m in SENS_METHODS:
+                    if m not in ext:
+                        continue
+                    for s in SENS_SEEDS:
+                        if (m, s) not in done:
+                            tmp = qdir / f"{name}_sens_{m}_{s}.jsonl"
+                            cmd = [py, "-I", str(root / "scripts" / "13_run_protocol.py"), "learners", "--instances", spec, "--methods", m,
+                                   "--seeds", str(s), "--budget", str(BUDGET), "--eval-every", str(EVAL_EVERY), "--tuned",
+                                   "--tuned-file", str(p_e), "--out", str(tmp)]
+                            jobs.append(Job((name, "sens", m, s), "sens", est_cost(m, ext[m]["cfg"]), cmd, tmp, target))
         if "finals" in kinds:
             target = root / "runs" / f"final_ext_{inst}.jsonl"
             done = {(r["method"], r["seed"]) for r in read_rows(target)}
@@ -97,7 +121,7 @@ def build_jobs(root, insts=INSTANCES, kinds=("finals", "ablation")):
 
 
 def order(jobs):
-    return sorted(jobs, key=lambda j: (j.kind != "finals", -j.cost, j.key))
+    return sorted(jobs, key=lambda j: (KIND_RANK[j.kind], -j.cost, j.key))
 
 
 def merge(job):
@@ -168,7 +192,7 @@ def pid_alive(pid):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--kinds", nargs="+", default=["finals", "ablation"], choices=["finals", "ablation"])
+    ap.add_argument("--kinds", nargs="+", default=["finals", "ablation"], choices=["finals", "sens", "ablation"])
     ap.add_argument("--instances", nargs="+", default=list(INSTANCES))
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--poll", type=float, default=20.0)
@@ -179,7 +203,7 @@ def main():
     if lock.exists() and pid_alive(int(lock.read_text().strip() or 0)):
         raise SystemExit(f"já há uma fila em execução (PID {lock.read_text().strip()})")
     lock.write_text(str(os.getpid()))
-    required = {"finals": METHODS, "ablation": ("dqn",)}
+    required = {"finals": METHODS, "sens": SENS_METHODS, "ablation": ("dqn",)}
 
     def complete():
         for inst in a.instances:
@@ -187,7 +211,8 @@ def main():
             if not p.exists():
                 return False
             d = load_json(p)
-            if not all(m in d for k in a.kinds for m in required[k] if not (k == "ablation" and inst not in ABL_INSTANCES)):
+            if not all(m in d for k in a.kinds for m in required[k]
+                       if not ((k == "ablation" and inst not in ABL_INSTANCES) or (k == "sens" and inst not in SENS))):
                 return False
         return True
 

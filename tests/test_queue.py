@@ -50,6 +50,29 @@ class TestBuildJobs(unittest.TestCase):
         self.assertEqual(len(jobs), 4 * 10 - 1)
         self.assertNotIn(("cb12wd", "ablation", "noreplay", 0), {j.key for j in jobs})
 
+    def test_sens_jobs_need_scenarios_and_use_base_config(self):
+        self.assertEqual(Q.build_jobs(self.root, ("cb12wd",), ("sens",)), [])                      # sem cenários gerados: nada
+        sc = self.root / "scenarios"
+        sc.mkdir()
+        for k in ("val", "test"):
+            (sc / f"{k}_cb12wdx0.5.npz").write_bytes(b"")
+        (sc / "val_cb12we.npz").write_bytes(b"")                                                     # só val: ainda não entra
+        dump(self.root / "runs" / "sens_cb12wdx0.5.jsonl", [{"method": "dqn", "seed": 0}])
+        jobs = Q.build_jobs(self.root, ("cb12wd",), ("sens",))
+        self.assertEqual({j.key[0] for j in jobs}, {"cb12wdx0.5"})
+        self.assertEqual(len(jobs), 3 * 5 - 1)                                                       # 3 métodos no fixture × 5 sementes − 1 feita
+        self.assertTrue(all(j.kind == "sens" and j.target.name == "sens_cb12wdx0.5.jsonl" for j in jobs))
+        j = jobs[0]
+        self.assertEqual(j.cmd[j.cmd.index("--instances") + 1], "cb12wdx0.5")
+        self.assertTrue(j.cmd[j.cmd.index("--tuned-file") + 1].endswith("tuned_ext_cb12wd.json"))   # config da escala-base
+        self.assertIn("--tuned", j.cmd)
+
+    def test_sens_names_match_instance_names(self):
+        names = [n for lst in Q.SENS.values() for _, n in lst]
+        self.assertEqual(len(names), len(set(names)))
+        self.assertIn(("4", "legacy4"), Q.SENS["cb4wd"])                                              # legado a 3,5 = spec "4", nome legacy4
+        self.assertTrue(all(len(Q.SENS_SEEDS) == 5 for _ in names))
+
     def test_instance_without_tuning_files_is_ignored(self):
         self.assertEqual(Q.build_jobs(self.root, ("cb4wd", "cb8wd"), ("finals", "ablation")), [])
 
