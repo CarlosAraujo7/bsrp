@@ -7,7 +7,9 @@
 * Ordem: finais antes da ablação; dentro de cada tipo, a mais cara primeiro (balanceia o fim da fila).
 * Nº de trabalhadores: `--workers`, sobrescrito a cada ciclo pelo inteiro em runs/_q/WORKERS (se existir). `runs/_q/STOP`
   = não inicia novas execuções e sai quando as em curso terminarem. Falhou 2 vezes → desiste daquela execução e segue.
-* `sens` (P3, DESVIOS.md 2026-10-14): 4 aprendizes × 5 sementes × variantes de cb4wd/cb12wd e braço legado de 4 est., com a config\n  escolhida no P1 na escala-base; só entram instâncias cujos cenários val/test já existem em scenarios/.\n* Os reruns finais só entram para métodos cuja config escolhida em validação difere da original (regra do DESVIOS.md).
+* `sens` (P3, DESVIOS.md 2026-10-14): 4 aprendizes × 5 sementes × variantes de cb4wd/cb12wd e braço legado de 4 est., com a config
+  escolhida no P1 na escala-base; só entram instâncias cujos cenários val/test já existem em scenarios/.
+* Os reruns finais só entram para métodos cuja config escolhida em validação difere da original (regra do DESVIOS.md).
 
   python scripts/22_queue.py --kinds finals ablation --workers 4
   python scripts/22_queue.py --kinds sens --instances cb4wd cb12wd --workers 4      # P3: sensibilidade (runs/sens_<instância>.jsonl)
