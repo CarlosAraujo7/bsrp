@@ -40,6 +40,21 @@ def rows_of(p):
     return read(p) if Path(p).exists() else []
 
 
+def primary_rows(runs, inst):
+    """Execuções finais PRIMÁRIAS de uma escala (DESVIOS.md 2026-10-14): para cada método, o rerun estendido
+    (`final_ext_<inst>.jsonl`) se a config escolhida no pool de 16 difere da original; senão, o final original."""
+    runs = Path(runs)
+    orig, ext = load_json(runs / f"tuned_{inst}.json"), load_json(runs / f"tuned_ext_{inst}.json")
+    r_ext, r_orig = rows_of(runs / f"final_ext_{inst}.jsonl"), rows_of(runs / f"final_{inst}.jsonl")
+    out = []
+    for m in METHODS:
+        changed = m in ext and m in orig and ext[m]["cfg_id"] != orig[m]["cfg_id"]
+        src = r_ext if changed else r_orig
+        for r in src:
+            if r["method"] == m:
+                out.append({**r, "p1_source": "ext" if changed else "orig"})
+    return out
+
 def welch(a, b):
     """diferença de médias (a − b), IC95% de Welch e p (t)."""
     a, b = np.asarray(a, float), np.asarray(b, float)
@@ -240,10 +255,22 @@ def p2_report(runs, instances=("cb12wd", "cb4wd")):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--which", choices=["p1", "p2"], required=True)
+    ap.add_argument("--which", choices=["p1", "p2", "primary"], required=True,
+                    help="primary: grava (em --out, jsonl) as execuções finais primárias das escalas de --instances")
+    ap.add_argument("--instances", nargs="+", default=list(INSTANCES))
     ap.add_argument("--out", required=True)
     ap.add_argument("--runs-dir", default=str(ROOT / "runs"))
     a = ap.parse_args()
+    if a.which == "primary":
+        Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+        n = 0
+        with open(a.out, "w", encoding="utf-8") as f:
+            for inst in a.instances:
+                for r in primary_rows(a.runs_dir, inst):
+                    f.write(json.dumps(r, ensure_ascii=False) + "\n")
+                    n += 1
+        print(f"{n} execuções primárias gravadas em {a.out}")
+        return
     lines = p1_report(a.runs_dir) if a.which == "p1" else p2_report(a.runs_dir)
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out).write_text("\n".join(lines) + "\n", encoding="utf-8")

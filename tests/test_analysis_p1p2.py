@@ -3,6 +3,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
@@ -86,6 +87,25 @@ class TestAnalysisP1P2(unittest.TestCase):
             r["cfg"] = CFG_ORIG
         dump(self.tmp / f"ablation_{INST}.jsonl", rows)
         self.assertIn("ATENÇÃO", "\n".join(AN.p2_report(self.tmp, instances=(INST,))))
+
+    def test_primary_rows_use_ext_only_where_config_changed(self):
+        orig = json.loads((self.tmp / f"tuned_{INST}.json").read_text())
+        ext = json.loads((self.tmp / f"tuned_ext_{INST}.json").read_text())
+        orig["linear"] = {"cfg_id": 5, "cfg": CFG_ORIG, "val_mean": -90.0, "n_configs": 8, "seeds": [1000, 1001]}
+        ext["linear"] = {"cfg_id": 5, "cfg": CFG_ORIG, "val_mean": -90.0, "n_configs": 16, "seeds": [1000, 1001]}
+        (self.tmp / f"tuned_{INST}.json").write_text(json.dumps(orig))
+        (self.tmp / f"tuned_ext_{INST}.json").write_text(json.dumps(ext))
+        rows = [json.loads(l) for l in (self.tmp / f"final_{INST}.jsonl").read_text().splitlines()]
+        rows += [{"method": "linear", "seed": s, "cfg": CFG_ORIG, "test_mean": -130.0} for s in range(10)]
+        dump(self.tmp / f"final_{INST}.jsonl", rows)
+        prim = AN.primary_rows(self.tmp, INST)
+        by = defaultdict(list)
+        for r in prim:
+            by[(r["method"], r["p1_source"])].append(r["seed"])
+        self.assertEqual(set(by), {("dqn", "ext"), ("linear", "orig")})        # dqn mudou -> ext; linear não -> original
+        self.assertEqual(sorted(by[("dqn", "ext")]), list(range(10)))
+        self.assertEqual(sorted(by[("linear", "orig")]), list(range(10)))
+        self.assertTrue(all(r["cfg_id"] == 9 for r in prim if r["method"] == "dqn"))   # nenhuma linha da config original do dqn
 
     def test_tost_and_welch_sanity(self):
         d = np.random.default_rng(1).normal(0.0, 0.1, 10)
