@@ -253,9 +253,96 @@ def p2_report(runs, instances=("cb12wd", "cb4wd")):
     return L
 
 
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# P3 — sensibilidade do simulador (DESVIOS.md 2026-10-14)
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+P3_VARIANTS = {
+    "cb4wd": [("K = 0,5", "cb4wdx0.5"), ("K = 0,75", "cb4wdx0.75"), ("K = 1 (primário)", "cb4wd"), ("K = 1,5", "cb4wdx1.5"),
+              ("fim de semana", "cb4we"), ("legado × 1,5", "legacy4x1.5"), ("legado × 2,5", "legacy4x2.5"),
+              ("legado × 3,5", "legacy4"), ("legado × 5", "legacy4x5")],
+    "cb12wd": [("K = 0,5", "cb12wdx0.5"), ("K = 0,75", "cb12wdx0.75"), ("K = 1 (primário)", "cb12wd"), ("K = 1,5", "cb12wdx1.5"),
+               ("fim de semana", "cb12we")],
+}
+P3_SEEDS = 5
+P3_LEARNERS = ("dqn", "linear", "tab_station", "tab_cluster")
+P3_HEUR_FILES = ("heuristics_cb_wd.jsonl", "heuristics_cb_wd_g3.jsonl", "heuristics_sens_a.jsonl", "heuristics_sens_a_g3.jsonl",
+                 "heuristics_sens_b.jsonl", "heuristics_sens_b_g3.jsonl")
+
+
+def best_heuristic(H):
+    """Melhor heurística calibrada, escolhida por VALIDAÇÃO (mesma regra de 14_analyze_runs.py)."""
+    cal = {k: v for k, v in H.items() if k.endswith(("_cal", "_cal2", "_cal3"))}
+    if not cal:
+        return None
+    return max(cal, key=lambda k: max((cal[k].get("val_table") or {0: -1e9}).values()))
+
+
+def p3_data(runs, name, base):
+    runs = Path(runs)
+    if name == base:         # K = 1: resultados primários do P1, restritos às mesmas 5 sementes
+        rows = [r for r in rows_of(runs / "final_primary.jsonl") if r["instance"] == name and r["seed"] < P3_SEEDS]
+    else:
+        rows = [r for r in rows_of(runs / f"sens_{name}.jsonl") if r["seed"] < P3_SEEDS]
+    by = {m: {r["seed"]: r for r in rows if r["method"] == m} for m in P3_LEARNERS}
+    H = {}
+    for f in P3_HEUR_FILES:
+        for r in rows_of(runs / f):
+            if r["instance"] == name:
+                H[r["method"]] = r
+    return by, H
+
+
+def p3_report(runs, bases=("cb4wd", "cb12wd")):
+    L = ["# P3 — sensibilidade do simulador (gerado por `scripts/21_analyze_p1_p2.py --which p3`)\n",
+         "> Desenho e critério fixados em `DESVIOS.md` (2026-10-14), **antes** de rodar. 5 sementes (0–4); aprendizes com a config escolhida no P1 na "
+         "escala-base, **sem reajuste por variante**; a heurística é **recalibrada em validação em cada variante** (viés contra os aprendizes). "
+         "Reward de TESTE (1000 cenários sintéticos novos por variante); maior = melhor. C1 = DQN − melhor heurística, diferença por semente "
+         "(a heurística é determinística), IC95% t; 'significativo' = IC exclui 0. Análise exploratória: sem correção entre variantes. "
+         "K = 1 usa as mesmas 5 primeiras sementes dos resultados primários.\n"]
+    flips, total = [], 0
+    for base in bases:
+        L += [f"\n## Escala-base {base}\n",
+              "| variante | n sem. | parada | melhor heurística (por val) | DQN [IC95%] | C1: DQN − heurística [IC95%] | redução vs heurística | linear | tab. estação | tab. cluster |",
+              "|---|---|---|---|---|---|---|---|---|---|"]
+        real_rows = []
+        for label, name in P3_VARIANTS[base]:
+            by, H = p3_data(runs, name, base)
+            bh = best_heuristic(H)
+            if bh is None or len(by["dqn"]) < 2:
+                L.append(f"| {label} (`{name}`) | {len(by['dqn'])} | (pendente) | | | | | | | |")
+                continue
+            total += 1
+            h = H[bh]["test_mean"]
+            stay = H["stay"]["test_mean"] if "stay" in H else float("nan")
+            x = np.array([r["test_mean"] for _, r in sorted(by["dqn"].items())])
+            d = x - h
+            lo, hi = ci_t(d)
+            red = (abs(h) - abs(x.mean())) / abs(h) if h else float("nan")
+            means = {m: (np.mean([r["test_mean"] for r in by[m].values()]) if by[m] else float("nan")) for m in P3_LEARNERS}
+            beaten = [m for m in ("linear", "tab_station", "tab_cluster") if by[m] and means[m] > h]
+            c1_ok = bool(lo > 0)
+            L.append(f"| {label} (`{name}`) | {len(x)} | {fmt(stay)} | {fmt(h)} ({bh}) | {fmt(x.mean())} [{fmt(ci_t(x)[0])}; {fmt(ci_t(x)[1])}] | "
+                     f"{fmt(d.mean())} [{fmt(lo)}; {fmt(hi)}]{'' if c1_ok else ' ⚠'} | {fmt(100 * red, 0)}% | "
+                     + " | ".join(fmt(means[m]) + (" ⚠" if m in beaten else "") for m in ("linear", "tab_station", "tab_cluster")) + " |")
+            if not c1_ok:
+                flips.append(f"{name}: C1 NÃO é significativo (DQN − heurística = {fmt(d.mean())} [{fmt(lo)}; {fmt(hi)}])")
+            if beaten:
+                flips.append(f"{name}: {', '.join(beaten)} supera(m) a melhor heurística")
+            if name.endswith("we") and "real_test_mean" in H.get(bh, {}) and all("real_test_mean" in r for r in by["dqn"].values()):
+                xr = np.array([r["real_test_mean"] for _, r in sorted(by["dqn"].items())])
+                real_rows.append(f"| {label} | {len(xr)} | {fmt(H['stay']['real_test_mean'])} | {fmt(H[bh]['real_test_mean'])} | {fmt(xr.mean())} | "
+                                 f"{fmt((xr - H[bh]['real_test_mean']).mean())} |")
+        if real_rows:
+            L += [f"\n**Dias reais de fim de semana ({base})** (única variante em que o replay de dias reais é interpretável):\n",
+                  "| variante | n sem. | parada | melhor heurística | DQN | DQN − heurística |", "|---|---|---|---|---|---|"] + real_rows
+    L += ["\n### Onde a conclusão muda (⚠ nas tabelas)\n"]
+    L += [f"- {s}" for s in flips] if flips else ["- Em nenhuma variante: C1 significativo e nenhum tabular/linear supera a heurística."]
+    L.append(f"\nVariantes analisadas: {total}; com alguma mudança de conclusão: {len({s.split(':')[0] for s in flips})}.")
+    return L
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--which", choices=["p1", "p2", "primary"], required=True,
+    ap.add_argument("--which", choices=["p1", "p2", "p3", "primary"], required=True,
                     help="primary: grava (em --out, jsonl) as execuções finais primárias das escalas de --instances")
     ap.add_argument("--instances", nargs="+", default=list(INSTANCES))
     ap.add_argument("--out", required=True)
@@ -271,7 +358,7 @@ def main():
                     n += 1
         print(f"{n} execuções primárias gravadas em {a.out}")
         return
-    lines = p1_report(a.runs_dir) if a.which == "p1" else p2_report(a.runs_dir)
+    lines = {"p1": p1_report, "p2": p2_report, "p3": p3_report}[a.which](a.runs_dir)
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out).write_text("\n".join(lines) + "\n", encoding="utf-8")
     try:

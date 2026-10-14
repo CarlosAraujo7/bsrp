@@ -117,5 +117,53 @@ class TestAnalysisP1P2(unittest.TestCase):
         self.assertLess(p, 0.01)
 
 
+class TestAnalysisP3(unittest.TestCase):
+    """Sensibilidade (P3): a tabela marca onde a conclusão muda."""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._td.name)
+        rng = np.random.default_rng(3)
+
+        def heur(inst, stay, h):
+            return [{"instance": inst, "method": "stay", "test_mean": stay},
+                    {"instance": inst, "method": "greedy_cal", "test_mean": h, "val_table": {"cfg": h}},
+                    {"instance": inst, "method": "greedy_cal3", "test_mean": h - 5, "val_table": {"cfg": h - 6}}]   # a melhor por VAL é greedy_cal
+
+        def learners(inst, dqn, lin, ts, tc):
+            out = []
+            for m, mu in (("dqn", dqn), ("linear", lin), ("tab_station", ts), ("tab_cluster", tc)):
+                out += [{"instance": inst, "method": m, "seed": s, "test_mean": float(mu + rng.normal(0, 0.2))} for s in range(5)]
+            return out
+
+        # variante A: DQN claramente melhor; tabulares/linear piores que a heurística (−8)
+        # variante B: DQN ≈ heurística (C1 não significativo) e tab_cluster melhor que a heurística
+        dump(self.tmp / "heuristics_sens_a.jsonl", heur("cb4wdx0.5", -10.0, -8.0) + heur("cb4wdx1.5", -10.0, -8.0))
+        dump(self.tmp / "sens_cb4wdx0.5.jsonl", learners("cb4wdx0.5", -3.0, -12.0, -9.0, -9.5))
+        dump(self.tmp / "sens_cb4wdx1.5.jsonl", learners("cb4wdx1.5", -8.0, -12.0, -9.0, -7.0))
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def test_p3_flags_where_conclusion_changes(self):
+        lines = AN.p3_report(self.tmp, bases=("cb4wd",))
+        txt = "\n".join(lines)
+        row_a = next(l for l in lines if "`cb4wdx0.5`" in l)
+        row_b = next(l for l in lines if "`cb4wdx1.5`" in l)
+        self.assertNotIn("⚠", row_a)                                           # conclusão mantida
+        self.assertIn("greedy_cal", row_a)                                     # melhor heurística escolhida por val, não por teste
+        self.assertIn("⚠", row_b)
+        self.assertIn("cb4wdx1.5: C1 NÃO é significativo", txt)
+        self.assertIn("cb4wdx1.5: tab_cluster supera(m) a melhor heurística", txt)
+        self.assertNotIn("cb4wdx0.5:", txt.split("Onde a conclusão muda")[1])
+        self.assertIn("(pendente)", txt)                                       # variantes ainda sem execuções
+
+    def test_p3_reduction_and_c1_values(self):
+        row = next(l for l in AN.p3_report(self.tmp, bases=("cb4wd",)) if "`cb4wdx0.5`" in l)
+        cells = [c.strip() for c in row.split("|")]
+        self.assertIn(cells[7], ("62%", "63%"))                                # (8 − ~3) / 8 ≈ 62,5 %
+        c1 = float(cells[6].split(" ")[0].replace(",", "."))
+        self.assertAlmostEqual(c1, 5.0, delta=0.5)                             # DQN (−3) − heurística (−8)
+
 if __name__ == "__main__":
     unittest.main()
