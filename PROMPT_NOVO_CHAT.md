@@ -21,7 +21,7 @@ ESTADO EM 3 LINHAS
 
 PRIMEIROS PASSOS
 a) Verifique o ambiente sem alterar nada: `git status`, `python -m unittest discover -s tests`, `Get-ScheduledTaskInfo -TaskName BSRP-Tembici-GBFS`, `python scripts/03_collect_tembici_gbfs.py --analyze`.
-b) Commite o que estiver pendente em runs/ e tables/ (resultados finais e tabelas), com a linha final "Co-Authored-By: Claude ... <noreply@anthropic.com>".
+b) Confirme que o último commit é ddc70a9 (ou posterior) e que não há alterações pendentes. Commits terminam com a linha "Co-Authored-By: Claude ... <noreply@anthropic.com>".
 c) Me apresente um plano curto para P1 e P2 (mais rápidas e que fortalecem a manchete) e espere meu OK antes de gastar horas de CPU.
 
 REGRAS (o usuário as aprovou; siga-as)
