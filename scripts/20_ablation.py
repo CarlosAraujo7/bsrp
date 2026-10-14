@@ -61,6 +61,7 @@ def main():
     ap.add_argument("--budget", type=int, default=500_000)
     ap.add_argument("--eval-every", type=int, default=50_000)
     ap.add_argument("--tuned-file", default=None, help="padrão: runs/tuned_ext_<inst>.json (config do DQN escolhida no P1)")
+    ap.add_argument("--out", default=None, help="padrão: runs/ablation_<inst>.jsonl")
     a = ap.parse_args()
     inst, sc = RP.get_bundle(a.instance)
     env = E.BSRPEnv(inst)
@@ -70,7 +71,7 @@ def main():
     cfg = t["cfg"]
     agent_kw = {k: v for k, v in cfg.items() if k not in TRAIN_KEYS}
     train_kw = {k: v for k, v in cfg.items() if k in TRAIN_KEYS}
-    out = ROOT / "runs" / f"ablation_{inst.name}.jsonl"
+    out = Path(a.out) if a.out else ROOT / "runs" / f"ablation_{inst.name}.jsonl"
     print(f"[{inst.name}] base: dqn cfg {t['cfg_id']} {cfg}", flush=True)
     for seed in a.seeds:                       # semente no laço externo: interrompido, todas as variantes têm sementes iguais
         for v in a.variants:

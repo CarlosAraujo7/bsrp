@@ -15,3 +15,6 @@ data/
 # logs de processos em segundo plano
 runs/*.out
 runs/*.err
+
+# fila de execucoes (22_queue.py): temporarios e logs por execucao
+runs/_q/

@@ -48,6 +48,7 @@ Lapidar o BSRP (rebalanceamento de bicicletas compartilhadas com 1 veículo, RL)
 | `bsrp/agents.py` | `QTabular` (cluster/estação), `DQN` (`hidden=()` = linear; flags `use_replay/use_target/double` para ablação), `PolicyGradient` (REINFORCE + baseline) |
 | `bsrp/train.py` | `SeedSequence` (4 fluxos independentes), treino em passos de ambiente, val periódica, `final_eval` |
 | `tests/` | 28 testes: G0 (regressão, invariantes, CRN, reprodutibilidade), `test_tuning.py` (pool de 16 contém o de 8), `test_ablation.py` (variantes) |
+| `scripts/22_queue.py` | **fila de execuções** com N trabalhadores (reruns finais do P1 + ablação do P2): retomável, um escritor por arquivo (temporários em `runs/_q/`), ordem finais→ablação e mais cara primeiro; nº de trabalhadores em `runs/_q/WORKERS` (relido a cada ciclo), `runs/_q/STOP` drena; log em `runs/queue.out` |
 | `scripts/20_ablation.py` | ablação do DQN (P2): `noreplay/notarget/nodouble/vanilla` sobre a config do P1, sementes 0–9 → `runs/ablation_<inst>.jsonl` (retomável) |
 | `scripts/12_prepare_citibike.py` | zips Citi Bike → `data/processed/citibike_2024/flows_od.npz` (fluxos 30 min + O–D só de semanas de treino) |
 | `scripts/13_run_protocol.py` | executor: `scenarios` / `heuristics` / `learners` (instâncias `4`, `legacy4x1.5`, `cb4wd`, `cb12we`, `cb4wdx1.5`…) |
@@ -80,6 +81,8 @@ python scripts/16_tune.py --instance cb4wd --space ext --configs 16 --methods dq
 python scripts/16_tune.py --instance cb4wd --space ext --configs 16 --methods dqn linear tab_station tab_cluster pg \
        --seeds 1000 1001 --budget 200000                              # SÓ depois de todas imprimirem FILL-FIM: escolhe e grava tuned_ext
 python scripts/17_pipeline_final.py --ext cb4wd --seeds 0 1 2 3 4 --methods dqn   # runs finais também em fatias (por sementes/métodos)
+# Preferível às fatias manuais: fila única (reruns finais do P1 + ablação P2), até N trabalhadores; ajuste N sem reiniciar:
+python scripts/22_queue.py --kinds finals ablation --workers 4      # runs/_q/WORKERS sobrescreve; runs/_q/STOP drena
 # P2 (ablação; precisa de runs/tuned_ext_<inst>.json com o DQN):
 python scripts/20_ablation.py --instance cb12wd [--variants noreplay vanilla] [--seeds 0 1 2]
 ```
