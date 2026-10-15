@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 import glob
 import gzip
+import hashlib
 import json
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
@@ -306,6 +307,35 @@ def real_scenarios(cf: CityFlows, inst: Instance, idx: list, days: np.ndarray, m
     return ScenarioSet(np.array(init, np.int64).reshape(-1, n), np.array(dep, np.int16).reshape(-1, N_INTERVALS, n),
                        np.array(arr, np.int16).reshape(-1, N_INTERVALS, n), meta={"days": kept, "dropped": dropped})
 
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PERSISTÊNCIA (data/processed/tembici/<cidade>[_jump<k>].npz; fora do git)
+# ──────────────────────────────────────────────────────────────────────────────
+def save_processed(path, cf: CityFlows, split: np.ndarray, idx: list, inst: Instance) -> None:
+    np.savez_compressed(path, dates=np.array(cf.dates), split=np.array(split).astype(str), station_ids=np.array(cf.station_ids),
+                        arr=cf.arr, dep=cf.dep, cover=cf.cover, ops=cf.ops, ops_vol=cf.ops_vol, stock06=cf.stock06, polls=cf.polls,
+                        active_frac=cf.active_frac, sel=np.array(idx), cap=inst.cap, cluster=inst.cluster, lat=inst.lat, lon=inst.lon,
+                        lam_dep=inst.lam_dep, lam_arr=inst.lam_arr, names=np.array(inst.station_names), base_name=np.array(inst.name))
+
+
+def load_processed(path):
+    """-> (CityFlows, Instance, idx, split). O nome da instância leva um resumo do λ/capacidades: cenários salvos de uma
+    preparação anterior nunca são reaproveitados por engano depois que a janela de coleta cresce."""
+    z = np.load(path, allow_pickle=False)
+    cf = CityFlows([str(d) for d in z["dates"]], [str(s) for s in z["station_ids"]], z["arr"], z["dep"], z["cover"], z["ops"],
+                   z["ops_vol"], z["stock06"], z["polls"], z["active_frac"])
+    h = hashlib.sha256()
+    for k in ("lam_dep", "lam_arr", "cap"):
+        h.update(np.ascontiguousarray(z[k]).tobytes())
+    inst = Instance(f"{str(z['base_name'])}_{h.hexdigest()[:6]}", z["cap"].astype(np.int64), z["cluster"].astype(np.int64), z["lat"], z["lon"],
+                    z["lam_dep"], z["lam_arr"], tuple(str(s) for s in z["names"]))
+    return cf, inst, [int(i) for i in z["sel"]], np.array([str(s) for s in z["split"]])
+
+
+def real_split_scenarios(cf: CityFlows, inst: Instance, idx: list, split: np.ndarray, which: str = "test") -> ScenarioSet | None:
+    """Replay dos dias ÚTEIS do conjunto `which` ('val' | 'test'); None se não houver (ex.: modo desenvolvimento)."""
+    days = np.array([i for i, (d, s) in enumerate(zip(cf.dates, split)) if s == which and day_type(d) == 0], dtype=int)
+    return real_scenarios(cf, inst, idx, days) if len(days) else None
 
 # ──────────────────────────────────────────────────────────────────────────────
 # PORTÃO G3

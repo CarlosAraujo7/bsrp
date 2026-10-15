@@ -201,6 +201,36 @@ class TestInstance(Base):
         self.assertEqual(len(rs2), 3)                             # com tolerância maior o dia entra, com λ nas células inválidas
 
 
+class TestPersistence(Base):
+    def test_roundtrip_and_name_depends_on_lambda(self):
+        cf, info = self.flows()
+        days = np.array([0, 1, 2])
+        idx = TB.select_stations(cf, info, days, n=3, radius_km=3.0)
+        inst = TB.build_instance(cf, info, idx, days, "tmb_test", n_clusters=2)
+        split = np.array(["dev", "dev", "dev"], dtype=object)
+        p = self.tmp / "x.npz"
+        TB.save_processed(p, cf, split, idx, inst)
+        cf2, inst2, idx2, split2 = TB.load_processed(p)
+        self.assertEqual(idx2, list(idx))
+        np.testing.assert_array_equal(inst2.lam_dep, inst.lam_dep)
+        np.testing.assert_array_equal(cf2.arr, cf.arr)
+        self.assertEqual(cf2.dates, cf.dates)
+        self.assertTrue(inst2.name.startswith("tmb_test_") and len(inst2.name) == len("tmb_test_") + 6)
+        self.assertEqual(list(split2), ["dev"] * 3)
+        other = E.Instance("tmb_test", inst.cap, inst.cluster, inst.lat, inst.lon, inst.lam_dep * 2.0, inst.lam_arr, inst.station_names)
+        TB.save_processed(self.tmp / "y.npz", cf, split, idx, other)
+        self.assertNotEqual(TB.load_processed(self.tmp / "y.npz")[1].name, inst2.name)        # λ diferente -> nome diferente
+
+    def test_no_holdout_scenarios_in_dev_mode(self):
+        cf, info = self.flows()
+        days = np.array([0, 1, 2])
+        idx = TB.select_stations(cf, info, days, n=3, radius_km=3.0)
+        inst = TB.build_instance(cf, info, idx, days, "tmb_test", n_clusters=2)
+        self.assertIsNone(TB.real_split_scenarios(cf, inst, idx, np.array(["dev", "dev", "dev"], dtype=object), "test"))
+        rs = TB.real_split_scenarios(cf, inst, idx, np.array(["train", "val", "test"], dtype=object), "test")
+        self.assertEqual(rs.meta["days"], [DAYS[2]])                                       # só o dia útil rotulado test
+
+
 class TestKMeans(unittest.TestCase):
     def test_deterministic_and_separates_groups(self):
         lat = np.array([0.0, 0.001, 0.002, 0.30, 0.301, 0.302])

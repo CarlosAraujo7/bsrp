@@ -56,6 +56,25 @@ def get_bundle(spec: str, scale: float = 3.5):
     global _FLOWS
     spec = str(spec)
     real = None
+    mt = re.fullmatch(r"tmb(rio|saopaulo)(?:j(\d+))?", spec)         # Tembici (P5): data/processed/tembici/<cidade>[_jump<k>].npz
+    if mt:
+        from bsrp import tembici as TB
+        f = ROOT / "data" / "processed" / "tembici" / (f"{mt[1]}.npz" if mt[2] is None else f"{mt[1]}_jump{mt[2]}.npz")
+        cf, inst, idx, split = TB.load_processed(f)
+        SCEN_DIR.mkdir(exist_ok=True)
+        sc = {}
+        for kind, n_ep, k in (("val", N_VAL, 1), ("test", N_TEST, 2)):
+            p = SCEN_DIR / f"{kind}_{inst.name}.npz"
+            if p.exists():
+                sc[kind] = E.ScenarioSet.load(p)
+            else:
+                ss = np.random.SeedSequence([SCEN_SALT, k, sum(map(ord, inst.name))])
+                sc[kind] = E.sample_scenarios(inst, n_ep, np.random.default_rng(ss))
+                sc[kind].save(p)
+        real = TB.real_split_scenarios(cf, inst, idx, split, "test")       # None até haver ≥ 4 semanas completas
+        if real is not None:
+            sc["real_test"] = real
+        return inst, sc
     m = re.fullmatch(r"cb(\d+)(wd|we)(?:x([\d.]+))?", spec)          # calibrada em dados reais; xK = fator de sensibilidade
     if m:
         if _FLOWS is None:

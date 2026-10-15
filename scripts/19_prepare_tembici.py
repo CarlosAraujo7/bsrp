@@ -67,12 +67,9 @@ def main():
 
     out = ROOT / "data" / "processed" / "tembici"
     out.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(out / (f"{a.city}.npz" if a.big_jump == TB.BIG_JUMP else f"{a.city}_jump{a.big_jump}.npz"), dates=np.array(cf.dates), split=split.astype(str), station_ids=np.array(cf.station_ids),
-                        arr=cf.arr, dep=cf.dep, cover=cf.cover, ops=cf.ops, stock06=cf.stock06, polls=cf.polls,
-                        sel=np.array(idx), cap=inst.cap, cluster=inst.cluster, lat=inst.lat, lon=inst.lon,
-                        lam_dep=inst.lam_dep, lam_arr=inst.lam_arr, names=np.array(inst.station_names))
-    print(f"\ngravado em {out}")
-
+    path = out / (f"{a.city}.npz" if a.big_jump == TB.BIG_JUMP else f"{a.city}_jump{a.big_jump}.npz")
+    TB.save_processed(path, cf, split, idx, inst)
+    print(f"\ngravado em {path}")
     if a.g3:
         test_days = np.flatnonzero((split == "test") & (types == 0))
         if not a.confirm_holdout or len(test_days) == 0:
