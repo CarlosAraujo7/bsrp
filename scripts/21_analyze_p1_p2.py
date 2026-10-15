@@ -373,7 +373,7 @@ def p4_report(runs, bases=("cb4wd", "cb8wd", "cb12wd")):
         L += [f"\n## {base}\n",
               f"Referência por val: **{ref}** = `{H[ref]['policy']}` (teste {fmt(h)}; parada {fmt(stay)}). "
               "Famílias, melhor val → teste: " + "; ".join(f"{k}: {fmt(max(v['val_table'].values()))} → {fmt(v['test_mean'])}" for k, v in sorted(fams.items())) + "\n"]
-        ro = sorted(rows_of(runs / f"rollout_{base}.jsonl"), key=lambda r: (r["h"], r["K"]))
+        ro = sorted([r for f in sorted(runs.glob(f"rollout_{base}*.jsonl")) for r in rows_of(f)], key=lambda r: (r["h"], r["K"]))      # inclui rollout_<inst>_h3K64.jsonl
         dq = np.array([r["test_mean"] for r in rows_of(runs / "final_primary.jsonl") if r["instance"] == base and r["method"] == "dqn"])
         L += ["| método | val | teste | redução vs referência | dias reais |", "|---|---|---|---|---|"]
         best_ro = max(ro, key=lambda r: r["val_mean"]) if ro else None

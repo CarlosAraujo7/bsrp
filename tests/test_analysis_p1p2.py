@@ -226,6 +226,14 @@ class TestAnalysisP4(unittest.TestCase):
         self.assertIn("DQN − A2C Seo (publicado)", txt)
         self.assertIn("A2C Seo (γ = 1,0), n = 10", txt)
 
+    def test_rollout_configs_in_extra_files_are_included_and_can_become_headline(self):
+        dump(self.tmp / "rollout_cb4wd_h3K64.jsonl",
+             [{"instance": "cb4wd", "h": 3, "K": 64, "val_mean": -9.0, "test_mean": -11.0, "real_test_mean": -10.0}])   # melhor em val
+        lines = AN.p4_report(self.tmp, bases=("cb4wd",))
+        head = next(l for l in lines if "cabeçalho" in l and l.startswith("| rollout"))
+        self.assertIn("h=3, K=64", head)
+        self.assertEqual(sum(1 for l in lines if l.startswith("| rollout")), 3)         # 2 do arquivo principal + 1 do extra
+
     def test_reduction_is_relative_to_the_validation_reference(self):
         row = next(l for l in AN.p4_report(self.tmp, bases=("cb4wd",)) if "h=2, K=16" in l and l.startswith("| rollout"))
         self.assertIn("46%", row)                                          # (26 − 14) / 26 = 46 %
