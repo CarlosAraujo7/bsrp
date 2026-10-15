@@ -76,5 +76,13 @@ class TestEpisodeSeeding(unittest.TestCase):
         self.assertEqual(len(a), len(b))
 
 
+class TestGridOption(unittest.TestCase):
+    def test_grid_parsing_and_default(self):
+        self.assertEqual(R.GRID, ((1, 4), (1, 16), (2, 4), (2, 16)))
+        parsed = tuple(tuple(int(x) for x in g.split(":")) for g in ("3:16", "2:64", "3:64"))
+        self.assertEqual(parsed, ((3, 16), (2, 64), (3, 64)))
+        self.assertTrue(set(parsed).isdisjoint(R.GRID))                                 # a extensão não repete configs já rodadas
+
+
 if __name__ == "__main__":
     unittest.main()

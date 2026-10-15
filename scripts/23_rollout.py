@@ -7,6 +7,7 @@ A semente do rollout deriva de (conjunto, índice do episódio, h, K): o resulta
 val (200), teste (1000) e dias reais; uma linha por (instância, h, K) em runs/rollout_<out>.jsonl; retomável.
 
   python scripts/23_rollout.py --instances cb4wd cb8wd cb12wd --out runs/rollout_cb_wd.jsonl
+  python scripts/23_rollout.py --instances cb12wd --out runs/rollout_cb12wd.jsonl --grid 3:16 2:64 3:64
 """
 import os
 for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
@@ -73,7 +74,9 @@ def main():
     ap.add_argument("--instances", nargs="+", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--heuristics", nargs="+", default=[str(ROOT / "runs" / f) for f in HEUR_FILES])
+    ap.add_argument("--grid", nargs="+", default=None, help="configs h:K (padrão: 1:4 1:16 2:4 2:16); extensão registrada em DESVIOS.md 2026-10-15: 3:16 2:64 3:64")
     a = ap.parse_args()
+    grid = GRID if a.grid is None else tuple(tuple(int(x) for x in g.split(":")) for g in a.grid)
     hrows = [json.loads(l) for f in a.heuristics if Path(f).exists() for l in open(f, encoding="utf-8") if l.strip()]
     out = Path(a.out)
     done = set()
@@ -85,7 +88,7 @@ def main():
         fam, ref = best_reference(hrows, inst.name)
         base = parse_policy(ref["policy"])
         print(f"[{inst.name}] referência (por val): {fam} = {ref['policy']}", flush=True)
-        for h, K in GRID:
+        for h, K in grid:
             if (inst.name, h, K) in done:
                 continue
             ro = P.Rollout(base, h=h, K=K, seed=0)
