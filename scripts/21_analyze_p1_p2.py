@@ -381,7 +381,7 @@ def p4_report(runs, bases=("cb4wd", "cb8wd", "cb12wd")):
             star = " **(cabeçalho: melhor em val)**" if r is best_ro else ""
             L.append(f"| rollout h={r['h']}, K={r['K']}{star} | {fmt(r['val_mean'])} | {fmt(r['test_mean'])} | "
                      f"{fmt(100 * (abs(h) - abs(r['test_mean'])) / abs(h), 0)}% | {fmt(r.get('real_test_mean'))} |")
-        for v, lab in (("published", "A2C Seo (publicado, γ = 0,9)"), ("gamma1", "A2C Seo (γ = 1,0)")):
+        for v, lab in (("published", "A2C Seo (publicado, γ = 0,9)"), ("gamma1", "A2C Seo (γ = 1,0)"), ("tuned", "A2C Seo (ajustado)")):
             a = [r for r in rows_of(runs / f"seo_a2c_{base}.jsonl") if r["variant"] == v]
             if len(a) >= 2:
                 x = np.array([r["test_mean"] for r in a])
@@ -398,7 +398,7 @@ def p4_report(runs, bases=("cb4wd", "cb8wd", "cb12wd")):
                 lo, hi = ci_t(d)
                 L.append(f"\nDQN − rollout de cabeçalho (h={best_ro['h']}, K={best_ro['K']}): {fmt(d.mean())} [{fmt(lo)}; {fmt(hi)}] "
                          f"(10/10 sementes melhores: {'sim' if np.all(d > 0) else 'não'}).")
-            for v, lab in (("published", "A2C Seo (publicado)"), ("gamma1", "A2C Seo (γ = 1,0)")):
+            for v, lab in (("published", "A2C Seo (publicado)"), ("gamma1", "A2C Seo (γ = 1,0)"), ("tuned", "A2C Seo (ajustado)")):
                 a = np.array([r["test_mean"] for r in rows_of(runs / f"seo_a2c_{base}.jsonl") if r["variant"] == v])
                 if len(a) >= 2:
                     dd, (lo, hi), p = welch(dq, a)

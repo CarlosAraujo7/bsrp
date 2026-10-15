@@ -34,10 +34,10 @@ LETTER = {"cb4wd": "A", "cb8wd": "B", "cb12wd": "C"}
 NST = {"cb4wd": 4, "cb8wd": 8, "cb12wd": 12}
 # cores por ENTIDADE (ordem fixa da paleta validada em light) + neutros
 COL = {"dqn": "#2a78d6", "rollout": "#eb6834", "linear": "#1baf7a", "tab_station": "#eda100", "pg": "#e87ba4",
-       "tab_cluster": "#008300", "a2c": "#4a3aa7", "heur": "#52514e", "stay": "#898781"}
+       "tab_cluster": "#008300", "a2c": "#4a3aa7", "a2c_t": "#9085e9", "heur": "#52514e", "stay": "#898781"}
 LABEL = {"stay": "Parada", "heur": "Heurística calibrada", "rollout": "Rollout (modelo)", "dqn": "DQN", "pg": "Policy gradient",
-         "a2c": "A2C (Seo et al., publicado)", "linear": "Linear", "tab_station": "Tabular (estação)", "tab_cluster": "Tabular (cluster)"}
-ORDER = ("stay", "heur", "rollout", "dqn", "pg", "a2c", "linear", "tab_station", "tab_cluster")
+         "a2c": "A2C (Seo, publicado)", "a2c_t": "A2C (Seo, ajustado)", "linear": "Linear", "tab_station": "Tabular (estação)", "tab_cluster": "Tabular (cluster)"}
+ORDER = ("stay", "heur", "rollout", "dqn", "pg", "a2c_t", "a2c", "linear", "tab_station", "tab_cluster")
 INK, INK2, MUTED, GRID, AXIS = "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c2b7"
 POS, NEG = "#2a78d6", "#e34948"
 
@@ -93,7 +93,7 @@ def collect(runs: Path) -> dict:
             rr = sorted([r for r in prim if r["instance"] == b and r["method"] == m], key=lambda r: r["seed"])
             d[m] = {"test": unmet(rr), "real": unmet(rr, "real_test_mean"), "seeds": [r["seed"] for r in rr],
                     "steps": [c["steps"] for c in rr[0]["curve"]], "curve": np.array([[-c["val"] for c in r["curve"]] for r in rr])}
-        for key, var in (("a2c", "published"), ("a2c_g1", "gamma1")):
+        for key, var in (("a2c", "published"), ("a2c_g1", "gamma1"), ("a2c_t", "tuned")):
             rr = sorted([r for r in rows_of(runs / f"seo_a2c_{b}.jsonl") if r["variant"] == var], key=lambda r: r["seed"])
             d[key] = {"test": unmet(rr), "real": unmet(rr, "real_test_mean"), "steps": [c["steps"] for c in rr[0]["curve"]],
                       "curve": np.array([[-c["val"] for c in r["curve"]] for r in rr])}
@@ -160,7 +160,7 @@ def table_csv(path, header, rows):
 
 
 def fig_main(R, outdir):
-    fig, axes = plt.subplots(2, 3, figsize=(7.2, 5.6))
+    fig, axes = plt.subplots(2, 3, figsize=(7.2, 6.1))
     csv_rows = []
     for r, (key, title) in enumerate((("test", "teste sintético (1000 cenários)"), ("real", "24 dias reais de teste"))):
         for c, b in enumerate(BASES):
@@ -205,7 +205,7 @@ def fig_main(R, outdir):
 def fig_curves(R, outdir):
     fig, axes = plt.subplots(1, 3, figsize=(7.2, 2.7), sharex=True)
     csv_rows = []
-    learners = ("dqn", "pg", "a2c", "linear", "tab_station")
+    learners = ("dqn", "pg", "a2c_t", "linear", "tab_station")
     for ax, b in zip(axes, BASES):
         for m in learners:
             d = R[b][m]
@@ -341,7 +341,7 @@ def write_tables_and_macros(R, A, S, root, runs):
         mac[f"dqnR{L}"] = pt(float(np.mean(d["dqn"]["real"])))
         mac[f"heurR{L}"], mac[f"rollR{L}"] = pt(d["heur"]["real"]), pt(ro["real"])
         mac[f"redR{L}"] = f"{100 * (d['heur']['real'] - np.mean(d['dqn']['real'])) / d['heur']['real']:.0f}"
-        for m, nm in (("pg", "pg"), ("linear", "lin"), ("tab_station", "tabs"), ("tab_cluster", "tabc"), ("a2c", "aca")):
+        for m, nm in (("pg", "pg"), ("linear", "lin"), ("tab_station", "tabs"), ("tab_cluster", "tabc"), ("a2c", "aca"), ("a2c_t", "acaT")):
             mac[f"{nm}{L}"] = pt(float(np.mean(d[m]["test"])))
         o, n = d["orig"]["dqn"].mean(), d["dqn"]["test"].mean()
         mac[f"dqnOrig{L}"], mac[f"ganhoBusca{L}"] = pt(o), pt(o - n)
@@ -438,7 +438,7 @@ def write_results_md(R, A, S, root):
           "- Simulador sem roteamento: todo deslocamento custa 1 intervalo; ocupação inicial dos dias reais desconhecida (50% ± 2); "
           "o modelo de Poisson superestima a dificuldade vs dias reais.",
           "- O rollout usa o modelo verdadeiro da demanda; o DQN aprende só de amostras. O melhor rollout estava no limite da grade (h, K).",
-          "- O A2C é uma adaptação, com hiperparâmetros como publicados e sem ajuste; não prova que o método original falha.",
+          "- O A2C é uma adaptação (entrada e ação do nosso simulador); a variante \"publicado\" não foi ajustada e a \"ajustado\" usa o mesmo orçamento (16 configs, 2 sementes de ajuste) dos demais aprendizes; nenhuma prova que o método original falha no problema de Seo et al.",
           "- Sensibilidade: aprendizes sem reajuste por variante, 5 sementes. Dados Tembici: ainda sem hold-out (janela < 4 semanas completas)."]
     (root / "06_resultados.md").write_text("\n".join(L) + "\n", encoding="utf-8")
 
@@ -460,6 +460,11 @@ def check_claims(R, A, S):
                     f"{b}: nos dias reais o DQN fica à frente ou empata com o rollout"))
     out.append((float(R["cb4wd"]["pg"]["test"].mean()) < R["cb4wd"]["heur"]["test"] and
                 all(float(R[b]["pg"]["test"].mean()) > R[b]["heur"]["test"] for b in ("cb8wd", "cb12wd")), "PG supera a heurística só em 4 estações"))
+    out.append((all(float(R[b]["a2c_t"]["test"].mean()) < float(R[b]["a2c"]["test"].mean()) for b in BASES), "A2C ajustado melhora o publicado nas 3 escalas"))
+    out.append((float(R["cb4wd"]["a2c_t"]["test"].mean()) < R["cb4wd"]["heur"]["test"]
+                and all(float(R[b]["a2c_t"]["test"].mean()) > R[b]["heur"]["test"] for b in ("cb8wd", "cb12wd")), "A2C ajustado supera a heurística só em 4 estações"))
+    out.append((all(float(R[b]["a2c_t"]["test"].mean()) > float(R[b]["dqn"]["test"].mean()) for b in BASES), "A2C ajustado fica atrás do DQN nas 3 escalas"))
+    out.append((all(float(R[b]["a2c_t"]["test"].mean()) < R[b]["stay"]["test"] for b in BASES), "A2C ajustado fica melhor que a parada nas 3 escalas"))
     out.append((all(abs(float(R[b]["a2c"]["test"].mean()) - R[b]["stay"]["test"]) / R[b]["stay"]["test"] < 0.10 for b in ("cb8wd", "cb12wd")),
                 "A2C publicado termina a menos de 10% da parada em 8 e 12 estações"))
     out.append((all(A[b]["noreplay"]["lo"] > 0 for b in A), "ablação: sem replay piora (IC exclui 0) em 4 e 12 estações"))
