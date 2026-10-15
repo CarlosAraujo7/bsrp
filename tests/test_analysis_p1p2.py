@@ -183,5 +183,53 @@ class TestAnalysisP3(unittest.TestCase):
         c1 = float(cells[6].split(" ")[0].replace(",", "."))
         self.assertAlmostEqual(c1, 5.0, delta=0.5)                             # DQN (−3) − heurística (−8)
 
+class TestAnalysisP4(unittest.TestCase):
+    """P4: referência por VALIDAÇÃO entre famílias; rollout de cabeçalho por val; contrastes com DQN e A2C."""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._td.name)
+        rng = np.random.default_rng(7)
+        inst = "cb4wd"
+        # a threshold é a melhor em VAL (−20 contra −22) apesar de pior no teste: a regra por val a escolhe como referência
+        dump(self.tmp / "heuristics_cb_wd.jsonl",
+             [{"instance": inst, "method": "stay", "test_mean": -47.0},
+              {"instance": inst, "method": "greedy_cal2", "policy": "greedy(lo=0.25,hi=0.55,d=10)", "test_mean": -24.0, "val_table": {"g": -22.0}}])
+        dump(self.tmp / "heuristics_cb_wd_threshold.jsonl",
+             [{"instance": inst, "method": "threshold_cal", "policy": "threshold(t=0.5,lo=0.35,hi=0.6,d=10,w=0.0)", "test_mean": -26.0, "val_table": {"t": -20.0}}])
+        dump(self.tmp / f"rollout_{inst}.jsonl",
+             [{"instance": inst, "h": 1, "K": 4, "val_mean": -18.0, "test_mean": -20.0, "real_test_mean": -21.0},
+              {"instance": inst, "h": 2, "K": 16, "val_mean": -12.0, "test_mean": -14.0, "real_test_mean": -15.0}])   # melhor em val
+        dump(self.tmp / f"seo_a2c_{inst}.jsonl",
+             [{"instance": inst, "variant": "published", "seed": s, "test_mean": float(-30 + rng.normal(0, 1)), "curve": [{"val": -29.0}],
+               "real_test_mean": -28.0} for s in range(10)]
+             + [{"instance": inst, "variant": "gamma1", "seed": s, "test_mean": float(-18 + rng.normal(0, 1)), "curve": [{"val": -17.0}],
+                 "real_test_mean": -16.0} for s in range(10)])
+        dump(self.tmp / "final_primary.jsonl",
+             [{"instance": inst, "method": "dqn", "seed": s, "test_mean": float(-10 + rng.normal(0, 0.5))} for s in range(10)])
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def test_reference_is_chosen_by_validation(self):
+        txt = "\n".join(AN.p4_report(self.tmp, bases=("cb4wd",)))
+        self.assertIn("Referência por val: **threshold_cal**", txt)
+        self.assertIn("(teste -26,00;", txt)
+
+    def test_headline_rollout_is_best_in_validation_and_contrasts_present(self):
+        lines = AN.p4_report(self.tmp, bases=("cb4wd",))
+        txt = "\n".join(lines)
+        head = next(l for l in lines if "cabeçalho" in l and l.startswith("| rollout"))
+        self.assertIn("h=2, K=16", head)
+        self.assertIn("DQN − rollout de cabeçalho (h=2, K=16)", txt)
+        self.assertIn("10/10 sementes melhores: sim", txt)                 # DQN (−10) > rollout (−14) em todas as sementes
+        self.assertIn("DQN − A2C Seo (publicado)", txt)
+        self.assertIn("A2C Seo (γ = 1,0), n = 10", txt)
+
+    def test_reduction_is_relative_to_the_validation_reference(self):
+        row = next(l for l in AN.p4_report(self.tmp, bases=("cb4wd",)) if "h=2, K=16" in l and l.startswith("| rollout"))
+        self.assertIn("46%", row)                                          # (26 − 14) / 26 = 46 %
+
+
 if __name__ == "__main__":
     unittest.main()

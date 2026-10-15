@@ -343,9 +343,72 @@ def p3_report(runs, bases=("cb4wd", "cb12wd")):
     L.append(f"\nVariantes analisadas: {total}; com alguma mudança de conclusão: {len({s.split(':')[0] for s in flips})}.")
     return L
 
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+# P4 — rollout, threshold e A2C adaptado de Seo et al. (DESVIOS.md 2026-10-14)
+# ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+P4_HEUR_FILES = ("heuristics_cb_wd.jsonl", "heuristics_cb_wd_g3.jsonl", "heuristics_cb_wd_threshold.jsonl",
+                 "heuristics_cb_wd_threshold2_cb4wd.jsonl", "heuristics_cb_wd_threshold2_cb8wd.jsonl", "heuristics_cb_wd_threshold2_cb12wd.jsonl")
+P4_FAMILIES = ("greedy_cal", "greedy_cal2", "greedy_cal3", "threshold_cal", "threshold_cal2")
+
+
+def p4_report(runs, bases=("cb4wd", "cb8wd", "cb12wd")):
+    runs = Path(runs)
+    L = ["# P4 — rollout, threshold e A2C adaptado de Seo et al. 2022 (gerado por `scripts/21_analyze_p1_p2.py --which p4`)\n",
+         "> Reward de TESTE (1000 cenários sintéticos) e dias reais; maior = melhor. Referência de heurística = a de maior reward em **validação** entre as "
+         "gulosas (grades 1–3) e a `threshold` (grades 1–2). Rollout: futuros do modelo (nunca da demanda real); config de cabeçalho = a de maior "
+         "reward em val. Contrastes com aprendizes: média por semente − constante (referência determinística) ou Welch (aprendiz × aprendiz). "
+         "O A2C é uma **adaptação** (hiperparâmetros como publicados; entrada e ação do nosso simulador), não uma reprodução.\n"]
+    for base in bases:
+        H = {}
+        for f in P4_HEUR_FILES:
+            for r in rows_of(runs / f):
+                if r["instance"] == base:
+                    H[r["method"]] = r
+        fams = {k: v for k, v in H.items() if k in P4_FAMILIES and v.get("val_table")}
+        if not fams:
+            continue
+        ref = max(fams, key=lambda k: max(fams[k]["val_table"].values()))
+        h, stay = H[ref]["test_mean"], H["stay"]["test_mean"]
+        h_real = H[ref].get("real_test_mean")
+        L += [f"\n## {base}\n",
+              f"Referência por val: **{ref}** = `{H[ref]['policy']}` (teste {fmt(h)}; parada {fmt(stay)}). "
+              "Famílias, melhor val → teste: " + "; ".join(f"{k}: {fmt(max(v['val_table'].values()))} → {fmt(v['test_mean'])}" for k, v in sorted(fams.items())) + "\n"]
+        ro = sorted(rows_of(runs / f"rollout_{base}.jsonl"), key=lambda r: (r["h"], r["K"]))
+        dq = np.array([r["test_mean"] for r in rows_of(runs / "final_primary.jsonl") if r["instance"] == base and r["method"] == "dqn"])
+        L += ["| método | val | teste | redução vs referência | dias reais |", "|---|---|---|---|---|"]
+        best_ro = max(ro, key=lambda r: r["val_mean"]) if ro else None
+        for r in ro:
+            star = " **(cabeçalho: melhor em val)**" if r is best_ro else ""
+            L.append(f"| rollout h={r['h']}, K={r['K']}{star} | {fmt(r['val_mean'])} | {fmt(r['test_mean'])} | "
+                     f"{fmt(100 * (abs(h) - abs(r['test_mean'])) / abs(h), 0)}% | {fmt(r.get('real_test_mean'))} |")
+        for v, lab in (("published", "A2C Seo (publicado, γ = 0,9)"), ("gamma1", "A2C Seo (γ = 1,0)")):
+            a = [r for r in rows_of(runs / f"seo_a2c_{base}.jsonl") if r["variant"] == v]
+            if len(a) >= 2:
+                x = np.array([r["test_mean"] for r in a])
+                lo, hi = ci_t(x)
+                rr = [r["real_test_mean"] for r in a if "real_test_mean" in r]
+                L.append(f"| {lab}, n = {len(x)} | {fmt(np.mean([r['curve'][-1]['val'] for r in a]))} | {fmt(x.mean())} [{fmt(lo)}; {fmt(hi)}] | "
+                         f"{fmt(100 * (abs(h) - abs(x.mean())) / abs(h), 0)}% | {fmt(np.mean(rr)) if rr else '—'} |")
+        if len(dq) > 1:
+            lo, hi = ci_t(dq)
+            L.append(f"| DQN (primário), n = {len(dq)} | — | {fmt(dq.mean())} [{fmt(lo)}; {fmt(hi)}] | "
+                     f"{fmt(100 * (abs(h) - abs(dq.mean())) / abs(h), 0)}% | — |")
+            if best_ro:
+                d = dq - best_ro["test_mean"]
+                lo, hi = ci_t(d)
+                L.append(f"\nDQN − rollout de cabeçalho (h={best_ro['h']}, K={best_ro['K']}): {fmt(d.mean())} [{fmt(lo)}; {fmt(hi)}] "
+                         f"(10/10 sementes melhores: {'sim' if np.all(d > 0) else 'não'}).")
+            for v, lab in (("published", "A2C Seo (publicado)"), ("gamma1", "A2C Seo (γ = 1,0)")):
+                a = np.array([r["test_mean"] for r in rows_of(runs / f"seo_a2c_{base}.jsonl") if r["variant"] == v])
+                if len(a) >= 2:
+                    dd, (lo, hi), p = welch(dq, a)
+                    L.append(f"\nDQN − {lab}: {fmt(dd)} [{fmt(lo)}; {fmt(hi)}], p(Welch) = {fmt(p, 4)}; "
+                             f"{lab} − referência: {fmt((a - h).mean())} [{fmt(ci_t(a - h)[0])}; {fmt(ci_t(a - h)[1])}].")
+    return L
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--which", choices=["p1", "p2", "p3", "primary"], required=True,
+    ap.add_argument("--which", choices=["p1", "p2", "p3", "p4", "primary"], required=True,
                     help="primary: grava (em --out, jsonl) as execuções finais primárias das escalas de --instances")
     ap.add_argument("--instances", nargs="+", default=list(INSTANCES))
     ap.add_argument("--out", required=True)
@@ -361,7 +424,7 @@ def main():
                     n += 1
         print(f"{n} execuções primárias gravadas em {a.out}")
         return
-    lines = {"p1": p1_report, "p2": p2_report, "p3": p3_report}[a.which](a.runs_dir)
+    lines = {"p1": p1_report, "p2": p2_report, "p3": p3_report, "p4": p4_report}[a.which](a.runs_dir)
     Path(a.out).parent.mkdir(parents=True, exist_ok=True)
     Path(a.out).write_text("\n".join(lines) + "\n", encoding="utf-8")
     try:
