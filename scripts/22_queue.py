@@ -40,13 +40,14 @@ SENS = {"cb4wd": [("cb4wdx0.5", "cb4wdx0.5"), ("cb4wdx0.75", "cb4wdx0.75"), ("cb
         "cb12wd": [("cb12wdx0.5", "cb12wdx0.5"), ("cb12wdx0.75", "cb12wdx0.75"), ("cb12wdx1.5", "cb12wdx1.5"), ("cb12we", "cb12we")]}
 SENS_METHODS = ("dqn", "linear", "tab_station", "tab_cluster")
 SENS_SEEDS = tuple(range(5))
-KIND_RANK = {"finals": 0, "sens": 1, "ablation": 2}
+SEO_VARIANTS = ("published", "gamma1")        # P4b (DESVIOS.md 2026-10-14): A2C adaptado de Seo et al. (2022); 10 sementes
+KIND_RANK = {"finals": 0, "sens": 1, "seo": 2, "ablation": 3}
 
 
 @dataclass
 class Job:
     key: tuple
-    kind: str            # "finals" | "sens" | "ablation"
+    kind: str            # "finals" | "sens" | "seo" | "ablation"
     cost: float          # custo relativo (só para ordenar)
     cmd: list
     tmp: Path
@@ -80,6 +81,16 @@ def build_jobs(root, insts=INSTANCES, kinds=("finals", "ablation")):
         if not (p_o.exists() and p_e.exists()):
             continue
         orig, ext = load_json(p_o), load_json(p_e)
+        if "seo" in kinds:
+            target = root / "runs" / f"seo_a2c_{inst}.jsonl"
+            done = {(r["variant"], r["seed"]) for r in read_rows(target)}
+            for v in SEO_VARIANTS:
+                for s in SEEDS:
+                    if (v, s) not in done:
+                        tmp = qdir / f"{inst}_seo_{v}_{s}.jsonl"
+                        cmd = [py, "-I", str(root / "scripts" / "24_seo_a2c.py"), "--instances", inst, "--variants", v,
+                               "--seeds", str(s), "--out", str(tmp)]
+                        jobs.append(Job((inst, "seo", v, s), "seo", 3.0, cmd, tmp, target))
         if "sens" in kinds and inst in SENS:
             for spec, name in SENS[inst]:
                 if not all((root / "scenarios" / f"{k}_{name}.npz").exists() for k in ("val", "test")):
@@ -194,7 +205,7 @@ def pid_alive(pid):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--kinds", nargs="+", default=["finals", "ablation"], choices=["finals", "sens", "ablation"])
+    ap.add_argument("--kinds", nargs="+", default=["finals", "ablation"], choices=["finals", "sens", "seo", "ablation"])
     ap.add_argument("--instances", nargs="+", default=list(INSTANCES))
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--poll", type=float, default=20.0)
@@ -205,7 +216,7 @@ def main():
     if lock.exists() and pid_alive(int(lock.read_text().strip() or 0)):
         raise SystemExit(f"já há uma fila em execução (PID {lock.read_text().strip()})")
     lock.write_text(str(os.getpid()))
-    required = {"finals": METHODS, "sens": SENS_METHODS, "ablation": ("dqn",)}
+    required = {"finals": METHODS, "sens": SENS_METHODS, "seo": (), "ablation": ("dqn",)}
 
     def complete():
         for inst in a.instances:

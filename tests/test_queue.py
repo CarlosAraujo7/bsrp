@@ -67,6 +67,19 @@ class TestBuildJobs(unittest.TestCase):
         self.assertTrue(j.cmd[j.cmd.index("--tuned-file") + 1].endswith("tuned_ext_cb12wd.json"))   # config da escala-base
         self.assertIn("--tuned", j.cmd)
 
+    def test_seo_jobs_cover_variants_and_seeds_and_skip_done(self):
+        dump(self.root / "runs" / "seo_a2c_cb12wd.jsonl", [{"variant": "published", "seed": 0}, {"variant": "gamma1", "seed": 3}])
+        jobs = Q.build_jobs(self.root, ("cb12wd",), ("seo",))
+        self.assertEqual(len(jobs), 2 * 10 - 2)
+        self.assertEqual({j.key[2] for j in jobs}, {"published", "gamma1"})
+        self.assertTrue(all(j.kind == "seo" and j.target.name == "seo_a2c_cb12wd.jsonl" for j in jobs))
+        j = jobs[0]
+        self.assertIn("24_seo_a2c.py", j.cmd[2])
+        self.assertEqual(Path(j.cmd[j.cmd.index("--out") + 1]), j.tmp)
+
+    def test_kind_rank_puts_finals_before_sens_before_seo_before_ablation(self):
+        self.assertEqual(sorted(Q.KIND_RANK, key=Q.KIND_RANK.get), ["finals", "sens", "seo", "ablation"])
+
     def test_sens_names_match_instance_names(self):
         names = [n for lst in Q.SENS.values() for _, n in lst]
         self.assertEqual(len(names), len(set(names)))
