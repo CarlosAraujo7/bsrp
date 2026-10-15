@@ -99,5 +99,75 @@ class TestReproducibility(unittest.TestCase):
         np.testing.assert_array_equal(before, np.random.get_state()[1])
 
 
+class TestTunedVariantKnobs(unittest.TestCase):
+    """entropy e reward_scale: padrão = como publicado; ativados mudam o treino do jeito esperado."""
+
+    def _observe_once(self, **kw):
+        env = E.BSRPEnv(INST).reset(VAL[0])
+        ag = agent(lr_actor=1e-2, lr_critic=1e-2, **kw)
+        s = env.features()
+        a = ag.select(env, 0.0, np.random.default_rng(0))
+        ag.observe(s, a, -2.0, s, True, ag._m)
+        return ag, s
+
+    def test_defaults_equal_published_behaviour(self):
+        a1, s = self._observe_once()
+        a2, _ = self._observe_once(entropy=0.0, reward_scale=1.0)
+        for x, y in zip(a1.actor.W, a2.actor.W):
+            np.testing.assert_array_equal(x, y)
+        self.assertEqual((a1.entropy, a1.reward_scale), (0.0, 1.0))
+
+    def test_entropy_bonus_changes_the_actor_update_and_pushes_toward_uniform(self):
+        env = E.BSRPEnv(INST).reset(VAL[0])
+        ents = {}
+        for beta in (0.0, 1.0):
+            ag = agent(lr_actor=5e-2, lr_critic=1e-2, entropy=beta)
+            s = env.features()
+            ag.select(env, 0.0, np.random.default_rng(0))
+            p0 = ag._probs(s[None], ag._m)[0]
+            for _ in range(30):                                        # td ≈ 0: só o bônus de entropia move o ator
+                ag.observe(s, int(np.argmax(p0)), 0.0, s, False, ag._m)
+            p = ag._probs(s[None], ag._m)[0]
+            ents[beta] = float(-(p[p > 0] * np.log(p[p > 0])).sum())
+        self.assertGreater(ents[1.0], ents[0.0])                       # com bônus a política fica mais espalhada
+
+    def test_reward_scale_only_matters_relative_to_the_entropy_bonus(self):
+        """Com Adam, escalar a recompensa não muda o 1º passo quando não há entropia; com entropia, muda o equilíbrio."""
+        def actor_after(scale, beta):
+            env = E.BSRPEnv(INST).reset(VAL[0])
+            ag = agent(lr_actor=1e-2, lr_critic=1e-2, entropy=beta, reward_scale=scale)
+            s = env.features()
+            ag.select(env, 0.0, np.random.default_rng(0))
+            ag.observe(s, 0, -10.0, s, True, ag._m)
+            return ag.actor.W
+        a, b = actor_after(1.0, 0.0), actor_after(0.1, 0.0)
+        for x, y in zip(a, b):
+            np.testing.assert_allclose(x, y, atol=1e-5)               # sem entropia: invariante à escala (Adam)
+        c, d = actor_after(1.0, 5.0), actor_after(0.1, 5.0)
+        self.assertTrue(any(not np.allclose(x, y, atol=1e-5) for x, y in zip(c, d)))     # com entropia: a escala pesa
+
+class TestTuningPool(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location("tune26", ROOT / "scripts" / "26_tune_a2c.py")
+        self.M = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.M)
+
+    def test_pool_has_16_configs_cfg0_is_published_and_is_deterministic(self):
+        c = self.M.config_list()
+        self.assertEqual(len(c), 16)
+        self.assertEqual(c[0], {"lr_actor": 5e-4, "lr_critic": 5e-4, "gamma": 0.9, "entropy": 0.0, "reward_scale": 1.0})
+        self.assertEqual(c, self.M.config_list())
+
+    def test_pool_respects_the_registered_ranges_and_covers_every_discrete_value(self):
+        c = self.M.config_list()[1:]
+        for x in c:
+            self.assertTrue(1e-4 <= x["lr_actor"] <= 10 ** -2.5 and 1e-4 <= x["lr_critic"] <= 10 ** -2.5)
+            self.assertIn(x["gamma"], (0.9, 0.95, 0.99, 1.0))
+            self.assertIn(x["entropy"], (0.0, 0.01, 0.03, 0.1, 0.3))
+            self.assertIn(x["reward_scale"], (1.0, 0.3, 0.1))
+        for k, vals in (("gamma", {0.9, 0.95, 0.99, 1.0}), ("entropy", {0.0, 0.01, 0.03, 0.1, 0.3}), ("reward_scale", {1.0, 0.3, 0.1})):
+            self.assertEqual({x[k] for x in c}, vals)                   # nenhum valor do espaço fica sem teste
+
+
 if __name__ == "__main__":
     unittest.main()

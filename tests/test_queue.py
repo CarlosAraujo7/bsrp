@@ -77,6 +77,14 @@ class TestBuildJobs(unittest.TestCase):
         self.assertIn("24_seo_a2c.py", j.cmd[2])
         self.assertEqual(Path(j.cmd[j.cmd.index("--out") + 1]), j.tmp)
 
+    def test_seo_tuned_variant_appears_only_when_the_tuned_file_exists(self):
+        before = {j.key[2] for j in Q.build_jobs(self.root, ("cb12wd",), ("seo",))}
+        self.assertEqual(before, {"published", "gamma1"})
+        (self.root / "runs" / "tuned_a2c_cb12wd.json").write_text(json.dumps({"cfg": {"gamma": 0.99}}))
+        after = Q.build_jobs(self.root, ("cb12wd",), ("seo",))
+        self.assertEqual({j.key[2] for j in after}, {"published", "gamma1", "tuned"})
+        self.assertEqual(len(after), 3 * 10)
+
     def test_kind_rank_puts_finals_before_sens_before_seo_before_ablation(self):
         self.assertEqual(sorted(Q.KIND_RANK, key=Q.KIND_RANK.get), ["finals", "sens", "seo", "ablation"])
 

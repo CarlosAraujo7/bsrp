@@ -84,7 +84,8 @@ def build_jobs(root, insts=INSTANCES, kinds=("finals", "ablation")):
         if "seo" in kinds:
             target = root / "runs" / f"seo_a2c_{inst}.jsonl"
             done = {(r["variant"], r["seed"]) for r in read_rows(target)}
-            for v in SEO_VARIANTS:
+            variants = SEO_VARIANTS + (("tuned",) if (root / "runs" / f"tuned_a2c_{inst}.json").exists() else ())
+            for v in variants:
                 for s in SEEDS:
                     if (v, s) not in done:
                         tmp = qdir / f"{inst}_seo_{v}_{s}.jsonl"
