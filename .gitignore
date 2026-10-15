@@ -18,3 +18,15 @@ runs/*.err
 
 # fila de execucoes (22_queue.py): temporarios e logs por execucao
 runs/_q/
+
+# artigo: artefatos de compilacao LaTeX
+artigo/*.aux
+artigo/*.log
+artigo/*.bbl
+artigo/*.blg
+artigo/*.out
+artigo/*.toc
+artigo/*.fls
+artigo/*.fdb_latexmk
+artigo/*.synctex.gz
+artigo/main.pdf

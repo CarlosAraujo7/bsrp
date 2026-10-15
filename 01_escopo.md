@@ -192,7 +192,7 @@ A política gulosa é importante pois simula o raciocínio humano intuitivo e é
 2. **Liang, Liu, Jena, Lodi & Vidal (2024)** — "Single- vs. Dual-Policy Reinforcement Learning for Dynamic Bike Rebalancing". arXiv:2402.03589 (v2, nov/2025). https://arxiv.org/abs/2402.03589 *(corrigido em 2026-10-12: a v1 do escopo atribuía a "Pan et al.")*
 3. **Pan, Cai, Fang, Tang & Huang (2018/2019)** — "A Deep Reinforcement Learning Framework for Rebalancing Dockless Bike Sharing Systems". arXiv:1802.04592; AAAI 2019. *(corrigido: a v1 atribuía a "Liu et al."; é bicicleta **sem doca**, ou seja, outro problema)*
 4. **Chiariotti, Pielli, Zanella & Zorzi (2020)** — "A Bike-sharing Optimization Framework Combining Dynamic Rebalancing and User Incentives". ACM Trans. Auton. Adapt. Syst. 14(3), art. 11. https://doi.org/10.1145/3376923 *(corrigido: título e ano da v1 estavam errados)*
-5. **"Efficient Inventory Routing for BSS (2024)"** — ScienceDirect, combinatorial RL framework. **[NÃO VERIFICADA em 2026-10-12: autores e título completos a localizar antes de citar]**
+5. **Guo, Y.; Li, J.; Xiao, L.; Allaoui, H.; Choudhary, A.; Zhang, L. (2024). "Efficient inventory routing for Bike-Sharing Systems: A combinatorial reinforcement learning framework". *Transportation Research Part E* 182, 103415. DOI 10.1016/j.tre.2024.103415.** **[VERIFICADA em 2026-10-15 por busca (metadados: autores, título, periódico, volume e artigo); o texto completo NÃO foi lido — não descrever o método além do que consta no resumo]**
 
 > Verificação de 2026-10-12: item 1 confirmado (Seo, Kim, Kang, Byon, Kho; J. Adv. Transp. 2022). Itens 2–4 conferidos nas páginas do arXiv e em busca web.
 
