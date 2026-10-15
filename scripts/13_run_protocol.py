@@ -125,6 +125,9 @@ def cmd_heuristics(a):
         if a.only_greedy3:      # grade 3 da gulosa (DESVIOS.md 2026-10-13)
             refs = []
             fams = (("greedy_cal3", P.greedy_grid3()),)
+        elif a.only_threshold2:   # P4c: grade 2 da threshold (DESVIOS.md 2026-10-14)
+            refs = []
+            fams = (("threshold_cal2", P.threshold_grid2()),)
         elif a.only_threshold:    # P4c (DESVIOS.md 2026-10-14): família threshold nas instâncias cb*
             refs = []
             fams = (("threshold_cal", P.threshold_grid()),)
@@ -194,6 +197,7 @@ def main():
             p.add_argument("--only-greedy2", action="store_true", help="só a grade estendida da gulosa")
             p.add_argument("--only-greedy3", action="store_true", help="só a grade 3 da gulosa")
             p.add_argument("--only-threshold", action="store_true", help="só a família threshold (162 configs)")
+            p.add_argument("--only-threshold2", action="store_true", help="só a grade 2 da threshold (hi < 0,6)")
             p.add_argument("--skip-threshold", action="store_true")
         if name == "learners":
             p.add_argument("--methods", nargs="+", default=["tab_cluster", "tab_station", "linear", "dqn"])

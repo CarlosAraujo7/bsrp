@@ -2,7 +2,7 @@
 23_rollout.py — rollout sobre a melhor heurística calibrada (P4a; especificado em DESVIOS.md 2026-10-14).
 
 Para cada instância: base = a referência de heurística de maior reward em VALIDAÇÃO entre greedy_cal / greedy_cal2 / greedy_cal3 /
-threshold_cal; Rollout(base, h, K) com h ∈ {1, 2}, K ∈ {4, 16}; futuros amostrados do MODELO de Poisson (nunca da demanda real).
+threshold_cal / threshold_cal2; Rollout(base, h, K) com h ∈ {1, 2}, K ∈ {4, 16}; futuros amostrados do MODELO de Poisson (nunca da demanda real).
 A semente do rollout deriva de (conjunto, índice do episódio, h, K): o resultado não depende da ordem dos episódios. Avalia em
 val (200), teste (1000) e dias reais; uma linha por (instância, h, K) em runs/rollout_<out>.jsonl; retomável.
 
@@ -33,8 +33,8 @@ _spec.loader.exec_module(RP)
 
 SALT = 20261014
 SETS = {"val": 1, "test": 2, "real_test": 3}
-HEUR_FILES = ("heuristics_cb_wd.jsonl", "heuristics_cb_wd_g3.jsonl", "heuristics_cb_wd_threshold.jsonl")
-FAMILIES = ("greedy_cal", "greedy_cal2", "greedy_cal3", "threshold_cal")
+HEUR_FILES = ("heuristics_cb_wd.jsonl", "heuristics_cb_wd_g3.jsonl", "heuristics_cb_wd_threshold.jsonl", "heuristics_cb_wd_threshold2.jsonl")
+FAMILIES = ("greedy_cal", "greedy_cal2", "greedy_cal3", "threshold_cal", "threshold_cal2")
 GRID = ((1, 4), (1, 16), (2, 4), (2, 16))                                     # (h, K)
 
 

@@ -27,6 +27,14 @@ class TestParse(unittest.TestCase):
             self.assertEqual((p.lo, p.hi, p.max_delta), (g.lo, g.hi, g.max_delta))
             self.assertEqual(p.name, g.name)
 
+    def test_threshold_grid2_extends_hi_below_grid1(self):
+        g1, g2 = P.threshold_grid(), P.threshold_grid2()
+        self.assertTrue(min(c.p[2] for c in g1) == 0.6 and max(c.p[2] for c in g2) < 0.6)   # grade 2 só cobre hi < 0,6
+        self.assertTrue(all(c.p[2] > c.p[1] for c in g2))                                    # hi > lo
+        self.assertEqual(len({c.name for c in g1} & {c.name for c in g2}), 0)                 # sem sobreposição com a grade 1
+        for c in g2[:6]:
+            self.assertEqual(R.parse_policy(c.name).p, c.p)
+
     def test_threshold_roundtrip(self):
         for g in P.threshold_grid()[:6]:
             p = R.parse_policy(g.name)

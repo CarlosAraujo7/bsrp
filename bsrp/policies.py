@@ -187,6 +187,11 @@ def threshold_grid():
             itertools.product((0.4, 0.5, 0.6), (0.25, 0.35, 0.45), (0.6, 0.75, 0.9), (5, 10), (0.0, 0.1, 0.3))]
 
 
+def threshold_grid2():
+    """Grade 2 da threshold (DESVIOS.md 2026-10-14): o ótimo da grade 1 caiu no limite inferior de `hi` (0,6) nas 3 escalas."""
+    return [ThresholdFamily(t, lo, hi, d, w) for t, lo, hi, d, w in
+            itertools.product((0.4, 0.5, 0.6), (0.25, 0.35, 0.45), (0.45, 0.5, 0.55), (5, 10), (0.0, 0.1, 0.3)) if hi > lo]
+
 def calibrate(env: BSRPEnv, candidates, val: ScenarioSet):
     """Escolhe, em VALIDAÇÃO, o candidato de maior reward médio. Retorna (melhor, tabela [(nome, média)])."""
     table = [(c.name, float(evaluate(env, c, val).mean())) for c in candidates]
