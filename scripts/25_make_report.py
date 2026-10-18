@@ -142,6 +142,29 @@ def sensitivity(runs: Path) -> dict:
     return res
 
 
+def retuned(runs: Path) -> dict:
+    """P3b (DESVIOS.md 2026-10-18): DQN reajustado (pool de 16, escolha por val) nas variantes do P3 em que a conclusão mudou."""
+    res = {}
+    for base, lst in AN.P3B_VARIANTS.items():
+        for label, name in lst:
+            d = AN.p3b_data(runs, name, base)
+            if d is None:
+                continue
+            t, base_id, same, rows = d
+            by, H = AN.p3_data(runs, name, base)
+            bh = AN.best_heuristic(H)
+            x = np.array([r["test_mean"] for _, r in sorted(rows.items())])
+            x0 = np.array([r["test_mean"] for _, r in sorted(by["dqn"].items())])
+            if bh is None or len(x) < 2:
+                continue
+            h = H[bh]["test_mean"]
+            lo, hi = ci_t(x - h)
+            dw, (wl, wh), _ = welch(x, x0)
+            res[name] = {"label": label, "name": name, "mean": float(np.mean(x - h)), "lo": float(lo), "hi": float(hi), "n": len(x), "same": bool(same),
+                         "cfg_id": int(t["cfg_id"]), "delta": float(dw), "dlo": float(wl), "dhi": float(wh), "dqn": -float(x.mean())}
+    return res
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # FIGURAS
 # ──────────────────────────────────────────────────────────────────────────────
@@ -296,6 +319,13 @@ def fig_sensitivity(S, outdir):
             ax.plot([it["lo"], it["hi"]], [yi, yi], color=INK, lw=1.1, zorder=2)
             ax.scatter([it["mean"]], [yi], s=36, color=col if (sig_pos or sig_neg) else "white", edgecolor=col, lw=1.3, zorder=3)
             csv_rows.append([b, it["name"], pt(it["mean"], 2), f"{pt(it['lo'], 2)}..{pt(it['hi'], 2)}", it["n"]])
+            rt = S.get("rt", {}).get(it["name"])
+            if rt is not None:                       # P3b: losango = DQN reajustado na variante (linha abaixo do círculo)
+                col_rt = POS if rt["lo"] > 0 else (NEG if rt["hi"] < 0 else MUTED)
+                ax.plot([rt["lo"], rt["hi"]], [yi + 0.28, yi + 0.28], color=INK, lw=0.9, alpha=0.55, zorder=2)
+                ax.scatter([rt["mean"]], [yi + 0.28], s=30, marker="D", color=col_rt if (rt["lo"] > 0 or rt["hi"] < 0) else "white",
+                           edgecolor=col_rt, lw=1.2, zorder=3)
+                csv_rows.append([b, it["name"] + "_reajustado", pt(rt["mean"], 2), f"{pt(rt['lo'], 2)}..{pt(rt['hi'], 2)}", rt["n"]])
         ax.axvline(0, color=AXIS, lw=1.0, zorder=1)
         ax.set_yticks(range(len(items)))
         ax.set_yticklabels([it["label"] for it in items])
@@ -359,6 +389,10 @@ def write_tables_and_macros(R, A, S, root, runs):
     mac["sensKmeioC"], mac["sensKmeioCLo"], mac["sensKmeioCHi"] = pt(k05["mean"], 2), pt(k05["lo"], 2), pt(k05["hi"], 2)
     we = next(it for it in S["cb12wd"] if it["name"] == "cb12we")
     mac["sensFdsC"], mac["sensFdsCLo"], mac["sensFdsCHi"] = pt(we["mean"], 2), pt(we["lo"], 2), pt(we["hi"], 2)
+    for name, nm in (("cb12wdx0.5", "Kmeio"), ("cb12we", "Fds")):                    # P3b: DQN reajustado nessas variantes
+        rt = S["rt"][name]
+        mac[f"sens{nm}RtC"], mac[f"sens{nm}RtCLo"], mac[f"sens{nm}RtCHi"] = pt(rt["mean"], 2), pt(rt["lo"], 2), pt(rt["hi"], 2)
+        mac[f"sens{nm}Delta"], mac[f"sens{nm}DeltaLo"], mac[f"sens{nm}DeltaHi"] = pt(rt["delta"], 2), pt(rt["dlo"], 2), pt(rt["dhi"], 2)
     cfgs = {b: (R[b]["rollout"]["h"], R[b]["rollout"]["K"]) for b in BASES}
     same = len(set(cfgs.values())) == 1
     h0, k0 = cfgs["cb4wd"]
@@ -434,12 +468,19 @@ def write_results_md(R, A, S, root):
         for it in S[b]:
             L.append(f"| {NST[b]} est. | {it['label']} | {pt(it['stay'])} | {pt(it['heur'])} | {pt(it['dqn'])} | "
                      f"{pt(it['mean'], 2)} [{pt(it['lo'], 2)}; {pt(it['hi'], 2)}] |")
+    if S.get("rt"):
+        L += ["\n### 5.1 DQN reajustado nas variantes em que a conclusão mudou (P3b; losangos da figura)\n",
+              "| variante | config (nº no pool de 16) | DQN reajustado − heurística [IC95%] | reajustado − sem reajuste [IC95% Welch] | n |", "|---|---|---|---|---|"]
+        for name, rt in S["rt"].items():
+            L.append(f"| {rt['label']} | {rt['cfg_id']}{' (= a do P1)' if rt['same'] else ''} | {pt(rt['mean'], 2)} [{pt(rt['lo'], 2)}; {pt(rt['hi'], 2)}] | "
+                     + ("—" if rt["same"] else f"{pt(rt['delta'], 2)} [{pt(rt['dlo'], 2)}; {pt(rt['dhi'], 2)}]") + f" | {rt['n']} |")
     L += ["\n## 6. Limitações a declarar\n",
           "- Simulador sem roteamento: todo deslocamento custa 1 intervalo; ocupação inicial dos dias reais desconhecida (50% ± 2); "
           "o modelo de Poisson superestima a dificuldade vs dias reais.",
           "- O rollout usa o modelo verdadeiro da demanda; o DQN aprende só de amostras. O melhor rollout estava no limite da grade (h, K).",
           "- O A2C é uma adaptação (entrada e ação do nosso simulador); a variante \"publicado\" não foi ajustada e a \"ajustado\" usa o mesmo orçamento (16 configs, 2 sementes de ajuste) dos demais aprendizes; nenhuma prova que o método original falha no problema de Seo et al.",
-          "- Sensibilidade: aprendizes sem reajuste por variante, 5 sementes. Dados Tembici: ainda sem hold-out (janela < 4 semanas completas)."]
+          "- Sensibilidade: aprendizes sem reajuste por variante (exceto o DQN nas duas variantes de 12 estações em que a conclusão mudou, reajustado no P3b), "
+          "5 sementes; a heurística é recalibrada em todas as variantes. Dados Tembici: ainda sem hold-out (janela < 4 semanas completas)."]
     (root / "06_resultados.md").write_text("\n".join(L) + "\n", encoding="utf-8")
 
 
@@ -477,6 +518,11 @@ def check_claims(R, A, S):
     we = next(it for it in S["cb12wd"] if it["name"] == "cb12we")
     out.append((k05["hi"] < 0, "sensibilidade 12 est.: DQN significativamente pior com demanda × 0,5"))
     out.append((we["lo"] <= 0 <= we["hi"], "sensibilidade 12 est.: fim de semana sem diferença detectável"))
+    rt = S["rt"]
+    out.append((all(rt[n]["lo"] <= 0 <= rt[n]["hi"] for n in ("cb12wdx0.5", "cb12we")),
+                "P3b: com o DQN reajustado, o IC95% de C1 inclui 0 nas duas variantes"))
+    out.append((all(rt[n]["dlo"] <= 0 <= rt[n]["dhi"] for n in ("cb12wdx0.5", "cb12we")),
+                "P3b: o reajuste não altera detectavelmente o DQN (IC de Welch inclui 0) nas duas variantes"))
     return out
 
 def main():
@@ -488,6 +534,7 @@ def main():
     outdir = ROOT / "figuras"
     (outdir / "dados").mkdir(parents=True, exist_ok=True)
     R, A, S = collect(runs), ablation(runs), sensitivity(runs)
+    S["rt"] = retuned(runs)
     fig_main(R, outdir)
     fig_curves(R, outdir)
     fig_pool(R, outdir)

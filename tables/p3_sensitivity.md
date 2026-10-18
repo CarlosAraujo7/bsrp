@@ -47,3 +47,15 @@
 - cb12we: C1 NÃO é significativo (DQN − heurística = 0,63 [-0,10; 1,36])
 
 Variantes analisadas: 14; com alguma mudança de conclusão: 4.
+
+## P3b — DQN reajustado nas variantes em que a conclusão mudou (DESVIOS.md 2026-10-18)
+
+> Pool de 16 configs do P1 reavaliado em cada variante (2 sementes de ajuste × 200 mil passos, escolha por **validação**); 5 sementes finais (0–4) × 500 mil passos. Referência = heurística recalibrada na variante (a mesma do P3). C1 reajustado = DQN reajustado − heurística, por semente, IC95% t. 'Sem reajuste' = DQN com a config do P1 (tabela acima); a diferença usa Welch porque as configs diferem (sementes de treino independentes). 'Limites' = hiperparâmetros da escolhida no mínimo/máximo do pool. Os ganhos de validação do ajuste costumam superestimar o ganho em teste.
+
+| variante | config escolhida na variante | val escolhida | val da config do P1 | limites | n sem. | DQN reajustado [IC95%] | C1: DQN reaj. − heurística [IC95%] | DQN sem reajuste | reaj. − sem reaj. [IC95% Welch] |
+|---|---|---|---|---|---|---|---|---|---|
+| K = 0,5 (`cb12wdx0.5`) | nº 14: lr 2.25e-04, sync 8000, every 1, batch 128, buffer 50000, ε-decay 0.7 | -7,30 | -8,16 | train_every=1 (mín.) | 5 | -7,22 [-7,65; -6,78] | -0,37 [-0,81; 0,06] | -7,31 | 0,09 [-0,36; 0,54] |
+| fim de semana (`cb12we`) | nº 14: lr 2.25e-04, sync 8000, every 1, batch 128, buffer 50000, ε-decay 0.7 | -18,65 | -19,92 | train_every=1 (mín.) | 5 | -17,33 [-18,36; -16,30] | 0,97 [-0,05; 2,00] | -17,67 | 0,34 [-0,73; 1,41] |
+
+- **cb12wdx0.5**: C1 não é significativo com o DQN reajustado: a vantagem não é robusta nesse regime (sem evidência de que a perda fosse só da configuração). (referência: greedy_cal2, teste -6,84; escolha por val em 16 configs × 2 sementes de ajuste.)
+- **cb12we**: C1 não é significativo com o DQN reajustado: a vantagem não é robusta nesse regime (sem evidência de que a perda fosse só da configuração). (referência: greedy_cal, teste -18,30; escolha por val em 16 configs × 2 sementes de ajuste.)

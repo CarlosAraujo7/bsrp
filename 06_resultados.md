@@ -77,9 +77,16 @@
 | 12 est. | K = 1,5 | 327,4 | 259,2 | 210,9 | 48,30 [42,92; 53,68] |
 | 12 est. | fim de semana | 39,8 | 18,3 | 17,7 | 0,63 [-0,10; 1,36] |
 
+### 5.1 DQN reajustado nas variantes em que a conclusão mudou (P3b; losangos da figura)
+
+| variante | config (nº no pool de 16) | DQN reajustado − heurística [IC95%] | reajustado − sem reajuste [IC95% Welch] | n |
+|---|---|---|---|---|
+| K = 0,5 | 14 | -0,37 [-0,81; 0,06] | 0,09 [-0,36; 0,54] | 5 |
+| fim de semana | 14 | 0,97 [-0,05; 2,00] | 0,34 [-0,73; 1,41] | 5 |
+
 ## 6. Limitações a declarar
 
 - Simulador sem roteamento: todo deslocamento custa 1 intervalo; ocupação inicial dos dias reais desconhecida (50% ± 2); o modelo de Poisson superestima a dificuldade vs dias reais.
 - O rollout usa o modelo verdadeiro da demanda; o DQN aprende só de amostras. O melhor rollout estava no limite da grade (h, K).
 - O A2C é uma adaptação (entrada e ação do nosso simulador); a variante "publicado" não foi ajustada e a "ajustado" usa o mesmo orçamento (16 configs, 2 sementes de ajuste) dos demais aprendizes; nenhuma prova que o método original falha no problema de Seo et al.
-- Sensibilidade: aprendizes sem reajuste por variante, 5 sementes. Dados Tembici: ainda sem hold-out (janela < 4 semanas completas).
+- Sensibilidade: aprendizes sem reajuste por variante (exceto o DQN nas duas variantes de 12 estações em que a conclusão mudou, reajustado no P3b), 5 sementes; a heurística é recalibrada em todas as variantes. Dados Tembici: ainda sem hold-out (janela < 4 semanas completas).

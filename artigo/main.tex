@@ -149,19 +149,23 @@ com demanda $\times 1$ (sem reajuste) e recalibrando a heur\'istica em cada vari
 supera a heur\'istica em todas as variantes calibradas. Com 12 esta\c{c}\~oes, a vantagem se mant\'em a partir de $\times 0{,}75$, mas com demanda
 $\times 0{,}5$ o DQN \'e significativamente pior (\sensKmeioC\ [\sensKmeioCLo; \sensKmeioCHi]) e no fim de semana n\~ao h\'a diferen\c{c}a
 detect\'avel (\sensFdsC\ [\sensFdsCLo; \sensFdsCHi]). Como a assimetria (aprendiz sem reajuste contra heur\'istica recalibrada) favorece a
-heur\'istica, esse resultado \'e conservador para a vantagem do DQN, mas n\~ao distingue ``o DQN perde nesse regime'' de ``a configura\c{c}\~ao n\~ao serve nele''.
+heur\'istica, reajustamos o DQN nessas duas variantes (as mesmas 16 configura\c{c}\~oes, escolha por valida\c{c}\~ao, 5 sementes): o reajuste n\~ao altera
+detectavelmente o DQN (\sensKmeioDelta\ [\sensKmeioDeltaLo; \sensKmeioDeltaHi] com demanda $\times 0{,}5$ e \sensFdsDelta\ [\sensFdsDeltaLo; \sensFdsDeltaHi] no
+fim de semana) e a diferen\c{c}a para a heur\'istica passa a \sensKmeioRtC\ [\sensKmeioRtCLo; \sensKmeioRtCHi] e \sensFdsRtC\ [\sensFdsRtCLo; \sensFdsRtCHi],
+ambas com IC incluindo zero (losangos na Figura~\ref{fig:sens}). Nesses dois regimes, portanto, n\~ao h\'a evid\^encia de vantagem do DQN, e a configura\c{c}\~ao
+escolhida com demanda $\times 1$ n\~ao explica a perda sozinha; n\~ao se exclui que alguma configura\c{c}\~ao fora das 16 testadas o recupere.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\textwidth]{fig_sensibilidade.pdf}
-\caption{DQN $-$ heur\'istica por variante do simulador (5 sementes, IC95\%). Azul: DQN melhor; vermelho: pior; vazio: IC inclui zero.}
+\caption{DQN $-$ heur\'istica por variante do simulador (5 sementes, IC95\%). Azul: DQN melhor; vermelho: pior; vazio: IC inclui zero. C\'irculo: configura\c{c}\~ao do P1; losango (apenas nas duas variantes de 12 esta\c{c}\~oes em que a conclus\~ao mudou): DQN reajustado na variante.}
 \label{fig:sens}
 \end{figure}
 
 \section{Limita\c{c}\~oes}\label{sec:lim}
 O simulador n\~ao tem roteamento nem tempo de viagem, e o estudo usa um \'unico ve\'iculo; os resultados n\~ao se estendem a frotas ou a rotas reais. A
 ocupa\c{c}\~ao inicial dos dias reais \'e desconhecida, e o modelo de Poisson superestima a dificuldade em 30--40\% em rela\c{c}\~ao aos dias reais. O
-\emph{rollout} usa o modelo verdadeiro. O A2C \'e uma adapta\c{c}\~ao; a escolha de suas configura\c{c}\~oes usa apenas duas sementes de ajuste. A sensibilidade usa 5 sementes e n\~ao reajusta os aprendizes. Nenhuma
+\emph{rollout} usa o modelo verdadeiro. O A2C \'e uma adapta\c{c}\~ao; a escolha de suas configura\c{c}\~oes usa apenas duas sementes de ajuste. A sensibilidade usa 5 sementes e n\~ao reajusta os aprendizes, exceto o DQN nas duas variantes de 12 esta\c{c}\~oes em que a conclus\~ao mudou. O teto de lote (\emph{batch}) de 256 do DQN \'e imposto por custo; uma verifica\c{c}\~ao com 512 e duas sementes n\~ao mostrou ganho consistente, mas n\~ao exclui um ganho pequeno com 12 esta\c{c}\~oes. Nenhuma
 das conclus\~oes foi validada em dados brasileiros ainda. Os resultados preliminares que eram nossa base de partida tinham defeitos (uma semente, escolha
 e teste na mesma amostra, heur\'isticas n\~ao calibradas, DQN mal treinado); n\~ao os usamos.
 
