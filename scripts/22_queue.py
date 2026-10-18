@@ -11,6 +11,11 @@
   escolhida no P1 na escala-base; só entram instâncias cujos cenários val/test já existem em scenarios/.
 * `sensrt` (P3b, DESVIOS.md 2026-10-18): DQN com a config escolhida em validação NA PRÓPRIA variante (`runs/tuned_ext_<variante>.json`),
   5 sementes (`runs/sens_retuned_<variante>.jsonl`); só entra a variante cujo arquivo de ajuste já existe.
+* `budget4x` (P8b, DESVIOS.md 2026-10-18): DQN com a config do P1 e 2 milhões de passos, 5 sementes (`runs/budget4x_<inst>.jsonl`).
+* `sensx` (P8c): DQN com sementes 5–9 nas variantes de `SENSRT`, com a config do P1 (acrescenta a `sens_<variante>.jsonl`) e com a
+  reajustada (acrescenta a `sens_retuned_<variante>.jsonl`; não entra se for a mesma config do P1).
+* `reseedfinals` (P8c): 10 sementes × 500 mil passos do DQN com a config de `runs/tuned_reseed_<inst>.json` (só existe se a reavaliação com 4
+  sementes mudou a escolha do P1) → `runs/final_reseed_<inst>.jsonl`.
 * Os reruns finais só entram para métodos cuja config escolhida em validação difere da original (regra do DESVIOS.md).
 
   python scripts/22_queue.py --kinds finals ablation --workers 4
@@ -43,8 +48,10 @@ SENS = {"cb4wd": [("cb4wdx0.5", "cb4wdx0.5"), ("cb4wdx0.75", "cb4wdx0.75"), ("cb
 SENS_METHODS = ("dqn", "linear", "tab_station", "tab_cluster")
 SENS_SEEDS = tuple(range(5))
 SENSRT = {"cb12wd": ("cb12wdx0.5", "cb12we")}   # P3b (DESVIOS.md 2026-10-18): DQN reajustado nas variantes em que a vantagem sumiu; 5 sementes
+SENSX_SEEDS = tuple(range(5, 10))             # P8c (DESVIOS.md 2026-10-18): DQN com 10 sementes nas duas variantes de 12 est. em que a conclusão mudou
+BUDGET4X, B4X_SEEDS = 2_000_000, tuple(range(5))   # P8b (DESVIOS.md 2026-10-18): DQN com 4x o orçamento (2 milhões de passos), 5 sementes
 SEO_VARIANTS = ("published", "gamma1")        # P4b (DESVIOS.md 2026-10-14): A2C adaptado de Seo et al. (2022); 10 sementes
-KIND_RANK = {"finals": 0, "sens": 1, "sensrt": 2, "seo": 3, "ablation": 4}
+KIND_RANK = {"finals": 0, "sens": 1, "sensrt": 2, "reseedfinals": 3, "budget4x": 4, "sensx": 5, "seo": 6, "ablation": 7}
 
 
 @dataclass
@@ -127,6 +134,43 @@ def build_jobs(root, insts=INSTANCES, kinds=("finals", "ablation")):
                                "--seeds", str(s), "--budget", str(BUDGET), "--eval-every", str(EVAL_EVERY), "--tuned",
                                "--tuned-file", str(p_v), "--out", str(tmp)]
                         jobs.append(Job((name, "sensrt", "dqn", s), "sensrt", est_cost("dqn", load_json(p_v)["dqn"]["cfg"]), cmd, tmp, target))
+        if "reseedfinals" in kinds:                      # P8c (1): só existe se a reavaliação com 4 sementes mudou a config escolhida
+            p_r = root / "runs" / f"tuned_reseed_{inst}.json"
+            if p_r.exists() and "dqn" in load_json(p_r) and load_json(p_r)["dqn"]["cfg_id"] != ext["dqn"]["cfg_id"]:
+                target = root / "runs" / f"final_reseed_{inst}.jsonl"
+                done = {r["seed"] for r in read_rows(target)}
+                for s in SEEDS:
+                    if s not in done:
+                        tmp = qdir / f"{inst}_reseedfinals_dqn_{s}.jsonl"
+                        cmd = [py, "-I", str(root / "scripts" / "13_run_protocol.py"), "learners", "--instances", inst, "--methods", "dqn",
+                               "--seeds", str(s), "--budget", str(BUDGET), "--eval-every", str(EVAL_EVERY), "--tuned",
+                               "--tuned-file", str(p_r), "--out", str(tmp)]
+                        jobs.append(Job((inst, "reseedfinals", "dqn", s), "reseedfinals", est_cost("dqn", load_json(p_r)["dqn"]["cfg"]), cmd, tmp, target))
+        if "budget4x" in kinds and "dqn" in ext:
+            target = root / "runs" / f"budget4x_{inst}.jsonl"
+            done = {r["seed"] for r in read_rows(target)}
+            for s in B4X_SEEDS:
+                if s not in done:
+                    tmp = qdir / f"{inst}_budget4x_dqn_{s}.jsonl"
+                    cmd = [py, "-I", str(root / "scripts" / "13_run_protocol.py"), "learners", "--instances", inst, "--methods", "dqn",
+                           "--seeds", str(s), "--budget", str(BUDGET4X), "--eval-every", str(BUDGET4X // 10), "--tuned",
+                           "--tuned-file", str(p_e), "--out", str(tmp)]
+                    jobs.append(Job((inst, "budget4x", "dqn", s), "budget4x", 4 * est_cost("dqn", ext["dqn"]["cfg"]), cmd, tmp, target))
+        if "sensx" in kinds and inst in SENSRT:
+            for name in SENSRT[inst]:
+                p_v = root / "runs" / f"tuned_ext_{name}.json"
+                variants = [("orig", p_e, root / "runs" / f"sens_{name}.jsonl")]
+                if p_v.exists() and "dqn" in load_json(p_v) and load_json(p_v)["dqn"]["cfg_id"] != ext["dqn"]["cfg_id"]:
+                    variants.append(("retuned", p_v, root / "runs" / f"sens_retuned_{name}.jsonl"))
+                for vname, p_cfg, target in variants:
+                    done = {r["seed"] for r in read_rows(target) if r.get("method", "dqn") == "dqn"}
+                    for s in SENSX_SEEDS:
+                        if s not in done:
+                            tmp = qdir / f"{name}_sensx_{vname}_{s}.jsonl"
+                            cmd = [py, "-I", str(root / "scripts" / "13_run_protocol.py"), "learners", "--instances", name, "--methods", "dqn",
+                                   "--seeds", str(s), "--budget", str(BUDGET), "--eval-every", str(EVAL_EVERY), "--tuned",
+                                   "--tuned-file", str(p_cfg), "--out", str(tmp)]
+                            jobs.append(Job((name, "sensx", f"dqn_{vname}", s), "sensx", est_cost("dqn", load_json(p_cfg)["dqn"]["cfg"]), cmd, tmp, target))
         if "finals" in kinds:
             target = root / "runs" / f"final_ext_{inst}.jsonl"
             done = {(r["method"], r["seed"]) for r in read_rows(target)}
@@ -225,7 +269,7 @@ def pid_alive(pid):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--kinds", nargs="+", default=["finals", "ablation"], choices=["finals", "sens", "sensrt", "seo", "ablation"])
+    ap.add_argument("--kinds", nargs="+", default=["finals", "ablation"], choices=["finals", "sens", "sensrt", "sensx", "budget4x", "reseedfinals", "seo", "ablation"])
     ap.add_argument("--instances", nargs="+", default=list(INSTANCES))
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--poll", type=float, default=20.0)
@@ -236,7 +280,7 @@ def main():
     if lock.exists() and pid_alive(int(lock.read_text().strip() or 0)):
         raise SystemExit(f"já há uma fila em execução (PID {lock.read_text().strip()})")
     lock.write_text(str(os.getpid()))
-    required = {"finals": METHODS, "sens": SENS_METHODS, "sensrt": (), "seo": (), "ablation": ("dqn",)}
+    required = {"finals": METHODS, "sens": SENS_METHODS, "sensrt": (), "sensx": (), "budget4x": ("dqn",), "reseedfinals": (), "seo": (), "ablation": ("dqn",)}
 
     def complete():
         for inst in a.instances:
@@ -245,7 +289,8 @@ def main():
                 return False
             d = load_json(p)
             if not all(m in d for k in a.kinds for m in required[k]
-                       if not ((k == "ablation" and inst not in ABL_INSTANCES) or (k == "sens" and inst not in SENS))):
+                       if not ((k == "ablation" and inst not in ABL_INSTANCES) or (k == "sens" and inst not in SENS)
+                               or (k in ("sensrt", "sensx") and inst not in SENSRT))):
                 return False
         return True
 

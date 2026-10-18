@@ -100,8 +100,49 @@ class TestBuildJobs(unittest.TestCase):
         self.assertEqual(j.cmd[j.cmd.index("--methods") + 1], "dqn")
         self.assertIn("--tuned", j.cmd)
 
-    def test_kind_rank_puts_finals_before_sens_before_sensrt_before_seo_before_ablation(self):
-        self.assertEqual(sorted(Q.KIND_RANK, key=Q.KIND_RANK.get), ["finals", "sens", "sensrt", "seo", "ablation"])
+    def test_budget4x_jobs_use_the_p1_config_with_four_times_the_steps(self):
+        dump(self.root / "runs" / "budget4x_cb12wd.jsonl", [{"method": "dqn", "seed": 0}, {"method": "dqn", "seed": 3}])
+        jobs = Q.build_jobs(self.root, ("cb12wd",), ("budget4x",))
+        self.assertEqual({j.key for j in jobs}, {("cb12wd", "budget4x", "dqn", s) for s in (1, 2, 4)})
+        j = jobs[0]
+        self.assertEqual(j.kind, "budget4x")
+        self.assertEqual(j.target.name, "budget4x_cb12wd.jsonl")
+        self.assertEqual(j.cmd[j.cmd.index("--budget") + 1], str(4 * Q.BUDGET))
+        self.assertEqual(j.cmd[j.cmd.index("--eval-every") + 1], str(4 * Q.BUDGET // 10))
+        self.assertTrue(j.cmd[j.cmd.index("--tuned-file") + 1].endswith("tuned_ext_cb12wd.json"))   # config do P1 da escala, sem reajuste
+        self.assertGreater(j.cost, Q.est_cost("dqn", CFG_DQN) * 3)
+
+    def test_sensx_jobs_extend_dqn_to_seeds_5_to_9_for_original_and_retuned_configs(self):
+        (self.root / "runs" / "tuned_ext_cb12wdx0.5.json").write_text(json.dumps({"dqn": {"cfg_id": 14, "cfg": CFG_DQN}}))
+        (self.root / "runs" / "tuned_ext_cb12we.json").write_text(json.dumps({"dqn": {"cfg_id": 9, "cfg": CFG_DQN}}))   # = P1: só a config original
+        dump(self.root / "runs" / "sens_cb12wdx0.5.jsonl", [{"method": "dqn", "seed": s} for s in range(6)])         # sementes 0-5 já feitas
+        jobs = Q.build_jobs(self.root, ("cb12wd",), ("sensx",))
+        got = {j.key for j in jobs}
+        self.assertEqual({k for k in got if k[0] == "cb12wdx0.5" and k[2] == "dqn_orig"}, {("cb12wdx0.5", "sensx", "dqn_orig", s) for s in (6, 7, 8, 9)})
+        self.assertEqual({k for k in got if k[0] == "cb12wdx0.5" and k[2] == "dqn_retuned"}, {("cb12wdx0.5", "sensx", "dqn_retuned", s) for s in range(5, 10)})
+        self.assertEqual({k for k in got if k[0] == "cb12we"}, {("cb12we", "sensx", "dqn_orig", s) for s in range(5, 10)})   # sem retuned (mesma config)
+        by = {j.key: j for j in jobs}
+        self.assertEqual(by[("cb12wdx0.5", "sensx", "dqn_retuned", 5)].target.name, "sens_retuned_cb12wdx0.5.jsonl")
+        self.assertEqual(by[("cb12wdx0.5", "sensx", "dqn_orig", 6)].target.name, "sens_cb12wdx0.5.jsonl")
+        self.assertTrue(by[("cb12wdx0.5", "sensx", "dqn_retuned", 5)].cmd[by[("cb12wdx0.5", "sensx", "dqn_retuned", 5)].cmd.index("--tuned-file") + 1]
+                        .endswith("tuned_ext_cb12wdx0.5.json"))
+
+    def test_reseedfinals_only_when_the_reseed_changed_the_p1_config(self):
+        self.assertEqual(Q.build_jobs(self.root, ("cb12wd",), ("reseedfinals",)), [])
+        (self.root / "runs" / "tuned_reseed_cb12wd.json").write_text(json.dumps({"dqn": {"cfg_id": 9, "cfg": CFG_DQN}}))     # mesma do P1
+        self.assertEqual(Q.build_jobs(self.root, ("cb12wd",), ("reseedfinals",)), [])
+        (self.root / "runs" / "tuned_reseed_cb12wd.json").write_text(json.dumps({"dqn": {"cfg_id": 3, "cfg": CFG_DQN}}))     # mudou
+        dump(self.root / "runs" / "final_reseed_cb12wd.jsonl", [{"method": "dqn", "seed": 0}])
+        jobs = Q.build_jobs(self.root, ("cb12wd",), ("reseedfinals",))
+        self.assertEqual({j.key for j in jobs}, {("cb12wd", "reseedfinals", "dqn", s) for s in range(1, 10)})
+        j = jobs[0]
+        self.assertEqual(j.target.name, "final_reseed_cb12wd.jsonl")
+        self.assertTrue(j.cmd[j.cmd.index("--tuned-file") + 1].endswith("tuned_reseed_cb12wd.json"))
+        self.assertEqual(j.cmd[j.cmd.index("--budget") + 1], str(Q.BUDGET))
+
+    def test_kind_rank_orders_the_kinds(self):
+        self.assertEqual(sorted(Q.KIND_RANK, key=Q.KIND_RANK.get),
+                         ["finals", "sens", "sensrt", "reseedfinals", "budget4x", "sensx", "seo", "ablation"])
 
     def test_sens_names_match_instance_names(self):
         names = [n for lst in Q.SENS.values() for _, n in lst]
