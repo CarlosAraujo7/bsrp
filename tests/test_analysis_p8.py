@@ -1,0 +1,165 @@
+"""Análise do P8 (scripts/30_analyze_p8.py): fração do ganho contra o clarividente, regra de 'limite ≈ zero', leitura do orçamento 4×,
+reavaliação das top-4 e P3c."""
+import importlib.util
+import json
+import tempfile
+import unittest
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parents[1]
+_spec = importlib.util.spec_from_file_location("an30", ROOT / "scripts" / "30_analyze_p8.py")
+P8 = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(P8)
+
+
+def dump(path, rows):
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        for r in rows:
+            f.write(json.dumps(r) + "\n")
+
+
+def rewards(mu, n=1000, seed=0, sd=1.0):
+    return list(np.random.default_rng(seed).normal(mu, sd, n))
+
+
+class TestOracleSection(unittest.TestCase):
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._td.name)
+        t = self.tmp
+        inst = "cb4wd"
+        # parada −40; heurística −20; rollout −10; DQN médio −10 (3 sementes: −9,5, −10, −10,5); clarividente −3 (não ≈ 0: −5% de 40 = −2)
+        dump(t / "heuristics_cb_wd.jsonl", [
+            {"instance": inst, "method": "stay", "test_rewards": [-40.0] * 1000, "real_test_rewards": [-40.0] * 24, "test_mean": -40.0},
+            {"instance": inst, "method": "greedy_cal", "policy": "g", "val_table": {"c": -20.0}, "test_rewards": [-20.0] * 1000,
+             "real_test_rewards": [-20.0] * 24, "test_mean": -20.0}])
+        dump(t / "rollout_cb4wd.jsonl", [{"instance": inst, "h": 3, "K": 64, "val_mean": -10.0, "test_mean": -10.0,
+                                          "test_rewards": [-10.0] * 1000, "real_test_rewards": [-10.0] * 24}])
+        dump(t / "final_primary.jsonl", [{"instance": inst, "method": "dqn", "seed": s, "test_mean": -10.5,
+                                          "test_rewards": [-10.0 - 0.5 * (s - 1)] * 1000, "real_test_rewards": [-10.5] * 24} for s in range(3)])
+        for W, v_test in ((300, -4.0), (1000, -3.0)):
+            rows = [{"instance": inst, "set": "test", "idx": k, "width": W, "value": v_test} for k in range(5)]
+            rows += [{"instance": inst, "set": "real", "idx": k, "width": W, "value": v_test} for k in range(24)]
+            dump(t / f"oracle_{inst}_w{W}.jsonl", rows)
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def test_fraction_of_gain_is_against_the_best_width_and_flags_a_loose_bound(self):
+        txt = "\n".join(P8.oracle_section(self.tmp, bases=("cb4wd",)))
+        row = next(l for l in txt.splitlines() if l.startswith("| teste sintético"))
+        cells = [c.strip() for c in row.split("|")]
+        # melhor valor por cenário = max(−4, −3) = −3 → denominador 37: heurística 20/37 = 54 %; rollout 30/37 = 81 %; DQN (−10 + 40)/37 = 81 %
+        self.assertEqual(cells[10], "54%")
+        self.assertEqual(cells[11], "81%")
+        self.assertTrue(cells[12].startswith("81%"))
+        self.assertTrue(cells[13].startswith("não"))                 # −3 < −5% × 40 = −2: limite não é ≈ zero
+        self.assertIn("Leitura (fixada antes de ver os dados)", txt)
+
+    def test_near_zero_clairvoyant_is_declared_loose(self):
+        for W in (300, 1000):
+            rows = [{"instance": "cb4wd", "set": "test", "idx": k, "width": W, "value": -1.0} for k in range(5)]
+            rows += [{"instance": "cb4wd", "set": "real", "idx": k, "width": W, "value": -1.0} for k in range(24)]
+            dump(self.tmp / f"oracle_cb4wd_w{W}.jsonl", rows)
+        txt = "\n".join(P8.oracle_section(self.tmp, bases=("cb4wd",)))
+        row = next(l for l in txt.splitlines() if l.startswith("| teste sintético"))
+        self.assertIn("sim: limite ≈ nenhuma demanda perdida", row)
+
+    def test_incomplete_real_days_are_not_reported(self):
+        dump(self.tmp / "oracle_cb4wd_w300.jsonl", [{"instance": "cb4wd", "set": "test", "idx": k, "width": 300, "value": -3.0} for k in range(5)]
+             + [{"instance": "cb4wd", "set": "real", "idx": k, "width": 300, "value": -3.0} for k in range(10)])
+        dump(self.tmp / "oracle_cb4wd_w1000.jsonl", [])
+        txt = "\n".join(P8.oracle_section(self.tmp, bases=("cb4wd",)))
+        self.assertIn("| teste sintético", txt)
+        self.assertNotIn("| dias reais", txt)
+
+    def test_pending_when_there_is_no_oracle_file(self):
+        (self.tmp / "oracle_cb4wd_w300.jsonl").unlink()
+        (self.tmp / "oracle_cb4wd_w1000.jsonl").unlink()
+        self.assertIn("(pendente)", "\n".join(P8.oracle_section(self.tmp, bases=("cb4wd",))))
+
+
+class TestBudgetSection(unittest.TestCase):
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._td.name)
+        t = self.tmp
+        inst = "cb12wd"
+        dump(t / "heuristics_cb_wd.jsonl", [{"instance": inst, "method": "stay", "test_rewards": [-90.0] * 1000, "real_test_rewards": [-90.0] * 24, "test_mean": -90.0},
+                                           {"instance": inst, "method": "greedy_cal", "policy": "g", "val_table": {"c": -80.0}, "test_rewards": [-80.0] * 1000,
+                                            "real_test_rewards": [-80.0] * 24, "test_mean": -80.0}])
+        dump(t / "rollout_cb12wd.jsonl", [{"instance": inst, "h": 3, "K": 64, "val_mean": -50.0, "test_mean": -50.0, "test_rewards": [-50.0] * 1000,
+                                           "real_test_rewards": [-50.0] * 24}])
+        rng = np.random.default_rng(1)
+        dump(t / "final_primary.jsonl", [{"instance": inst, "method": "dqn", "seed": s, "test_mean": float(-56 + rng.normal(0, 1)), "test_rewards": [-56.0] * 1000,
+                                          "real_test_rewards": [-56.0] * 24} for s in range(10)])
+        self.rng = rng
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def test_reading_when_more_budget_helps_and_dqn_overtakes_the_rollout(self):
+        dump(self.tmp / "budget4x_cb12wd.jsonl", [{"instance": "cb12wd", "method": "dqn", "seed": s, "test_mean": float(-45 + self.rng.normal(0, 0.5))} for s in range(5)])
+        txt = "\n".join(P8.budget_section(self.tmp, bases=("cb12wd",)))
+        self.assertIn("o orçamento de 500 mil passos limita o DQN", txt)
+        self.assertIn("DQN(2 M) supera o rollout", txt)
+
+    def test_reading_when_more_budget_does_not_help_and_rollout_stays_better(self):
+        dump(self.tmp / "budget4x_cb12wd.jsonl", [{"instance": "cb12wd", "method": "dqn", "seed": s, "test_mean": float(-56 + self.rng.normal(0, 1))} for s in range(5)])
+        txt = "\n".join(P8.budget_section(self.tmp, bases=("cb12wd",)))
+        self.assertIn("sem ganho detectável com 4× o orçamento", txt)
+        self.assertIn("o rollout continua melhor", txt)
+
+    def test_pending_with_fewer_than_two_seeds(self):
+        dump(self.tmp / "budget4x_cb12wd.jsonl", [{"instance": "cb12wd", "method": "dqn", "seed": 0, "test_mean": -45.0}])
+        self.assertIn("(pendente)", "\n".join(P8.budget_section(self.tmp, bases=("cb12wd",))))
+
+
+class TestReseedAndP3c(unittest.TestCase):
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._td.name)
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def test_reseed_confirmed_changed_and_pending(self):
+        t = self.tmp
+        dump(t / "final_primary.jsonl", [{"instance": "cb8wd", "method": "dqn", "seed": s, "test_mean": -30.0 + 0.1 * s} for s in range(10)])
+        (t / "reseed_cb4wd_decision.json").write_text(json.dumps({"means_all_seeds": {"11": -7.0, "3": -7.5}, "p1_cfg_id": 11, "selected_cfg_id": 11, "changed": False}))
+        (t / "reseed_cb8wd_decision.json").write_text(json.dumps({"means_all_seeds": {"9": -33.0, "5": -31.0}, "p1_cfg_id": 9, "selected_cfg_id": 5, "changed": True}))
+        dump(t / "final_reseed_cb8wd.jsonl", [{"instance": "cb8wd", "method": "dqn", "seed": s, "test_mean": -29.0 + 0.1 * s} for s in range(10)])
+        txt = "\n".join(P8.reseed_section(t, bases=("cb4wd", "cb8wd", "cb12wd")))
+        self.assertIn("seleção confirmada", txt)
+        self.assertIn("mudou; finais (n = 10)", txt)
+        self.assertTrue(any(l.startswith("| cb12wd") and "(pendente)" in l for l in txt.splitlines()))
+
+    def test_p3c_uses_up_to_ten_seeds_and_the_retuned_file(self):
+        t = self.tmp
+        cfg = {"lr": 3e-4}
+        mk = lambda cid, v: {"dqn": {"cfg_id": cid, "cfg": cfg, "val_mean": v, "n_configs": 16, "seeds": [1000, 1001], "budget": 200000}}
+        (t / "tuned_ext_cb12wd.json").write_text(json.dumps(mk(9, -69.0)))
+        (t / "tuned_ext_cb12wdx0.5.json").write_text(json.dumps(mk(14, -7.3)))
+        (t / "tuned_ext_cb12we.json").write_text(json.dumps(mk(14, -18.6)))
+        dump(t / "heuristics_sens_a.jsonl", [{"instance": n, "method": m, "test_mean": v, "val_table": {"c": v}} for n in ("cb12wdx0.5", "cb12we")
+                                            for m, v in (("stay", -20.0), ("greedy_cal", -10.0))])
+        rng = np.random.default_rng(5)
+        for n in ("cb12wdx0.5", "cb12we"):
+            dump(t / f"sens_{n}.jsonl", [{"method": "dqn", "seed": s, "test_mean": float(-11 + rng.normal(0, 0.3))} for s in range(10)]
+                 + [{"method": "linear", "seed": s, "test_mean": -30.0} for s in range(5)])
+            dump(t / f"sens_retuned_{n}.jsonl", [{"method": "dqn", "seed": s, "test_mean": float(-9 + rng.normal(0, 0.3))} for s in range(10)])
+        txt = "\n".join(P8.reseed_section(t, bases=()))
+        row = next(l for l in txt.splitlines() if l.startswith("| K = 0,5 (`cb12wdx0.5`)"))
+        cells = [c.strip() for c in row.split("|")]
+        num = lambda c: float(c.split(" ")[0].replace(",", "."))
+        self.assertEqual(cells[2], "10")                                   # 10 sementes sem reajuste (o linear não entra)
+        self.assertEqual(cells[4], "10")
+        self.assertAlmostEqual(num(cells[3]), -1.0, delta=0.3)             # C1 sem reajuste ≈ −11 − (−10)
+        self.assertAlmostEqual(num(cells[5]), 1.0, delta=0.3)              # C1 reajustado ≈ −9 − (−10)
+
+
+if __name__ == "__main__":
+    unittest.main()
