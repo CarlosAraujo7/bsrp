@@ -183,6 +183,64 @@ class TestAnalysisP3(unittest.TestCase):
         c1 = float(cells[6].split(" ")[0].replace(",", "."))
         self.assertAlmostEqual(c1, 5.0, delta=0.5)                             # DQN (−3) − heurística (−8)
 
+class TestAnalysisP3b(unittest.TestCase):
+    """P3b: DQN reajustado por variante; C1 reajustado e a leitura fixada antes de ver os dados."""
+
+    CFG9 = {"lr": 3e-4, "target_sync": 4000, "train_every": 1, "batch": 256, "buffer": 100_000, "eps_decay_frac": 0.5}
+    CFG4 = {"lr": 5e-4, "target_sync": 8000, "train_every": 2, "batch": 128, "buffer": 200_000, "eps_decay_frac": 0.7}
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._td.name)
+        t = lambda cid, cfg, v: {"dqn": {"cfg_id": cid, "cfg": cfg, "val_mean": v, "n_configs": 16, "seeds": [1000, 1001], "budget": 200000}}
+        (self.tmp / "tuned_ext_cb12wd.json").write_text(json.dumps(t(9, self.CFG9, -69.0)))
+        (self.tmp / "tuned_ext_cb12wdx0.5.json").write_text(json.dumps(t(4, self.CFG4, -30.0)))
+        (self.tmp / "tuned_ext_cb12we.json").write_text(json.dumps(t(9, self.CFG9, -55.0)))      # a do P1 foi a melhor: não há rerun
+        pool = [{"method": "dqn", "cfg_id": 4, "cfg": self.CFG4, "seed": s, "val_final": -30.0} for s in (1000, 1001)] + \
+               [{"method": "dqn", "cfg_id": 9, "cfg": self.CFG9, "seed": s, "val_final": -34.0} for s in (1000, 1001)]
+        dump(self.tmp / "tune_cb12wdx0.5.jsonl", pool)
+        dump(self.tmp / "heuristics_sens_a.jsonl",
+             [{"instance": n, "method": m, "test_mean": v, "val_table": {"c": v}} for n in ("cb12wdx0.5", "cb12we")
+              for m, v in (("stay", -20.0), ("greedy_cal", -10.0))])
+        dump(self.tmp / "sens_cb12wdx0.5.jsonl", [{"instance": "cb12wdx0.5", "method": "dqn", "seed": s, "test_mean": -11.0 + 0.05 * s} for s in range(5)])
+        dump(self.tmp / "sens_retuned_cb12wdx0.5.jsonl", [{"instance": "cb12wdx0.5", "method": "dqn", "seed": s, "test_mean": -8.0 + 0.05 * s} for s in range(5)])
+        dump(self.tmp / "sens_cb12we.jsonl", [{"instance": "cb12we", "method": "dqn", "seed": s, "test_mean": v} for s, v in enumerate([-12.0, -8.0, -11.0, -9.0, -10.0])])
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def test_retuned_rows_come_from_the_retuned_file_unless_the_config_is_the_p1_one(self):
+        t, base_id, same, rows = AN.p3b_data(self.tmp, "cb12wdx0.5", "cb12wd")
+        self.assertFalse(same)
+        self.assertAlmostEqual(np.mean([r["test_mean"] for r in rows.values()]), -7.9)           # sens_retuned_, não sens_
+        t, base_id, same, rows = AN.p3b_data(self.tmp, "cb12we", "cb12wd")
+        self.assertTrue(same)
+        self.assertAlmostEqual(np.mean([r["test_mean"] for r in rows.values()]), -10.0)          # sens_cb12we.jsonl (mesma config e sementes)
+
+    def test_section_is_empty_until_a_variant_is_tuned(self):
+        (self.tmp / "tuned_ext_cb12wdx0.5.json").unlink()
+        (self.tmp / "tuned_ext_cb12we.json").unlink()
+        self.assertEqual(AN.p3b_section(self.tmp), [])
+        self.assertIsNone(AN.p3b_data(self.tmp, "cb12wdx0.5", "cb12wd"))
+
+    def test_reading_follows_the_preregistered_rule(self):
+        txt = "\n".join(AN.p3b_section(self.tmp))
+        # DQN reajustado (≈ −8) vs heurística (−10): IC95% de C1 exclui 0 a favor do DQN
+        self.assertIn("**cb12wdx0.5**: o IC95% de C1 exclui 0 a favor do DQN", txt)
+        # cb12we: DQN (−10, dispersão grande) vs heurística (−10): não significativo
+        self.assertIn("**cb12we**: C1 não é significativo", txt)
+        self.assertIn("(= a do P1: resultado do P3 original)", txt)
+        dump(self.tmp / "sens_retuned_cb12wdx0.5.jsonl", [{"instance": "cb12wdx0.5", "method": "dqn", "seed": s, "test_mean": -13.0 + 0.05 * s} for s in range(5)])
+        txt = "\n".join(AN.p3b_section(self.tmp))
+        self.assertIn("**cb12wdx0.5**: o DQN reajustado continua SIGNIFICATIVAMENTE pior", txt)
+
+    def test_report_includes_section_and_shows_val_of_the_p1_config(self):
+        txt = "\n".join(AN.p3_report(self.tmp, bases=("cb12wd",)))
+        self.assertIn("P3b — DQN reajustado", txt)
+        row = next(l for l in txt.splitlines() if l.startswith("| K = 0,5 (`cb12wdx0.5`)") and "nº 4" in l)
+        self.assertIn("-34", row.replace(",", ".").replace("−", "-"))                         # val da config do P1 (nº 9) na variante
+
+
 class TestAnalysisP4(unittest.TestCase):
     """P4: referência por VALIDAÇÃO entre famílias; rollout de cabeçalho por val; contrastes com DQN e A2C."""
 

@@ -116,6 +116,8 @@ def build_jobs(root, insts=INSTANCES, kinds=("finals", "ablation")):
                 p_v = root / "runs" / f"tuned_ext_{name}.json"          # config do DQN escolhida em validação NA PRÓPRIA variante
                 if not p_v.exists() or "dqn" not in load_json(p_v):
                     continue
+                if load_json(p_v)["dqn"]["cfg_id"] == ext["dqn"]["cfg_id"]:
+                    continue        # o pool é o mesmo (config_list só depende do método): mesma config e sementes = o resultado de sens_<variante>.jsonl
                 target = root / "runs" / f"sens_retuned_{name}.jsonl"
                 done = {r["seed"] for r in read_rows(target)}
                 for s in SENS_SEEDS:

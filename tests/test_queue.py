@@ -88,7 +88,7 @@ class TestBuildJobs(unittest.TestCase):
     def test_sensrt_jobs_use_the_variants_own_tuned_file_and_wait_for_it(self):
         self.assertEqual(Q.build_jobs(self.root, ("cb12wd",), ("sensrt",)), [])                    # nenhuma variante ajustada ainda
         (self.root / "runs" / "tuned_ext_cb12wdx0.5.json").write_text(json.dumps({"dqn": {"cfg_id": 12, "cfg": CFG_DQN}}))
-        (self.root / "runs" / "tuned_ext_cb12we.json").write_text(json.dumps({"linear": {"cfg_id": 1, "cfg": CFG_DQN}}))   # sem dqn: não entra
+        (self.root / "runs" / "tuned_ext_cb12we.json").write_text(json.dumps({"dqn": {"cfg_id": 9, "cfg": CFG_DQN}}))     # = config da escala-base: não reroda
         dump(self.root / "runs" / "sens_retuned_cb12wdx0.5.jsonl", [{"method": "dqn", "seed": 0}, {"method": "dqn", "seed": 4}])
         jobs = Q.build_jobs(self.root, ("cb12wd",), ("sensrt",))
         self.assertEqual({j.key for j in jobs}, {("cb12wdx0.5", "sensrt", "dqn", s) for s in (1, 2, 3)})

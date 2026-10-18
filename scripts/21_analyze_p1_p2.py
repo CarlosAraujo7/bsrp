@@ -341,7 +341,69 @@ def p3_report(runs, bases=("cb4wd", "cb12wd")):
     L += ["\n### Onde a conclusão muda (⚠ nas tabelas)\n"]
     L += [f"- {s}" for s in flips] if flips else ["- Em nenhuma variante: C1 significativo e nenhum tabular/linear supera a heurística."]
     L.append(f"\nVariantes analisadas: {total}; com alguma mudança de conclusão: {len({s.split(':')[0] for s in flips})}.")
-    return L
+    return L + p3b_section(runs)
+
+
+# P3b (DESVIOS.md 2026-10-18): DQN reajustado (pool de 16 configs, escolha por val) NAS variantes em que o P3 mudou a conclusão
+P3B_VARIANTS = {"cb12wd": (("K = 0,5", "cb12wdx0.5"), ("fim de semana", "cb12we"))}
+
+
+def p3b_data(runs, name, base):
+    """(registro de ajuste do DQN na variante, cfg_id da escala-base, mesma config?, {semente: linha}) ou None se ainda não ajustado."""
+    runs = Path(runs)
+    p_t, p_b = runs / f"tuned_ext_{name}.json", runs / f"tuned_ext_{base}.json"
+    if not (p_t.exists() and p_b.exists()) or "dqn" not in load_json(p_t):
+        return None
+    t, base_id = load_json(p_t)["dqn"], load_json(p_b)["dqn"]["cfg_id"]
+    same = t["cfg_id"] == base_id                      # mesmo pool e mesmas sementes: o resultado é o de sens_<variante>.jsonl
+    src = runs / (f"sens_{name}.jsonl" if same else f"sens_retuned_{name}.jsonl")
+    rows = {r["seed"]: r for r in rows_of(src) if r["method"] == "dqn" and r["seed"] < P3_SEEDS}
+    return t, base_id, same, rows
+
+
+def p3b_section(runs, variants=P3B_VARIANTS):
+    runs = Path(runs)
+    out = []
+    for base, lst in variants.items():
+        for label, name in lst:
+            d = p3b_data(runs, name, base)
+            if d is None:
+                continue
+            t, base_id, same, rows = d
+            by, H = p3_data(runs, name, base)
+            bh = best_heuristic(H)
+            p_pool = runs / f"tune_{name}.jsonl"
+            pool = pool_stats(read(p_pool), "dqn") if p_pool.exists() else {}
+            val_base = pool[base_id][1] if base_id in pool else float("nan")
+            flags = ", ".join(border_flags(t["cfg"], pool)) if pool else "—"
+            cfg = t["cfg"]
+            cfg_s = f"nº {t['cfg_id']}: lr {cfg['lr']:.2e}, sync {cfg['target_sync']}, every {cfg['train_every']}, batch {cfg['batch']}, buffer {cfg['buffer']}, ε-decay {cfg['eps_decay_frac']}"
+            x = np.array([r["test_mean"] for _, r in sorted(rows.items())])
+            x0 = np.array([r["test_mean"] for _, r in sorted(by["dqn"].items())])
+            if bh is None or len(x) < 2:
+                out.append(f"| {label} (`{name}`) | {cfg_s} | {fmt(t['val_mean'])} | {fmt(val_base)} | {flags or 'nenhum'} | {len(x)} | (pendente) | | | |")
+                continue
+            h = H[bh]["test_mean"]
+            lo, hi = ci_t(x - h)
+            dw, (wl, wh), _ = welch(x, x0)
+            out.append(f"| {label} (`{name}`) | {cfg_s}{' (= a do P1: resultado do P3 original)' if same else ''} | {fmt(t['val_mean'])} | {fmt(val_base)} | "
+                       f"{flags or 'nenhum'} | {len(x)} | {fmt(x.mean())} [{fmt(ci_t(x)[0])}; {fmt(ci_t(x)[1])}] | "
+                       f"{fmt((x - h).mean())} [{fmt(lo)}; {fmt(hi)}] | {fmt(x0.mean())} | " + ("—" if same else f"{fmt(dw)} [{fmt(wl)}; {fmt(wh)}]") + " |")
+            reading = ("o IC95% de C1 exclui 0 a favor do DQN: a perda no P3 era, ao menos em parte, da configuração" if lo > 0 else
+                       "o DQN reajustado continua SIGNIFICATIVAMENTE pior que a heurística recalibrada: a vantagem não é robusta nesse regime" if hi < 0 else
+                       "C1 não é significativo com o DQN reajustado: a vantagem não é robusta nesse regime (sem evidência de que a perda fosse só da configuração)")
+            out.append(f"- **{name}**: {reading}. (referência: {bh}, teste {fmt(h)}; escolha por val em {t['n_configs']} configs × {len(t['seeds'])} sementes de ajuste.)")
+    if not out:
+        return []
+    rows_tbl = [l for l in out if l.startswith("|")]
+    notes = [l for l in out if l.startswith("- ")]
+    return ["\n## P3b — DQN reajustado nas variantes em que a conclusão mudou (DESVIOS.md 2026-10-18)\n",
+            "> Pool de 16 configs do P1 reavaliado em cada variante (2 sementes de ajuste × 200 mil passos, escolha por **validação**); 5 sementes finais (0–4) × 500 mil passos. "
+            "Referência = heurística recalibrada na variante (a mesma do P3). C1 reajustado = DQN reajustado − heurística, por semente, IC95% t. "
+            "'Sem reajuste' = DQN com a config do P1 (tabela acima); a diferença usa Welch porque as configs diferem (sementes de treino independentes). "
+            "'Limites' = hiperparâmetros da escolhida no mínimo/máximo do pool. Os ganhos de validação do ajuste costumam superestimar o ganho em teste.\n",
+            "| variante | config escolhida na variante | val escolhida | val da config do P1 | limites | n sem. | DQN reajustado [IC95%] | C1: DQN reaj. − heurística [IC95%] | DQN sem reajuste | reaj. − sem reaj. [IC95% Welch] |",
+            "|---|---|---|---|---|---|---|---|---|---|"] + rows_tbl + [""] + notes
 
 # ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
 # P4 — rollout, threshold e A2C adaptado de Seo et al. (DESVIOS.md 2026-10-14)
