@@ -85,8 +85,23 @@ class TestBuildJobs(unittest.TestCase):
         self.assertEqual({j.key[2] for j in after}, {"published", "gamma1", "tuned"})
         self.assertEqual(len(after), 3 * 10)
 
-    def test_kind_rank_puts_finals_before_sens_before_seo_before_ablation(self):
-        self.assertEqual(sorted(Q.KIND_RANK, key=Q.KIND_RANK.get), ["finals", "sens", "seo", "ablation"])
+    def test_sensrt_jobs_use_the_variants_own_tuned_file_and_wait_for_it(self):
+        self.assertEqual(Q.build_jobs(self.root, ("cb12wd",), ("sensrt",)), [])                    # nenhuma variante ajustada ainda
+        (self.root / "runs" / "tuned_ext_cb12wdx0.5.json").write_text(json.dumps({"dqn": {"cfg_id": 12, "cfg": CFG_DQN}}))
+        (self.root / "runs" / "tuned_ext_cb12we.json").write_text(json.dumps({"linear": {"cfg_id": 1, "cfg": CFG_DQN}}))   # sem dqn: não entra
+        dump(self.root / "runs" / "sens_retuned_cb12wdx0.5.jsonl", [{"method": "dqn", "seed": 0}, {"method": "dqn", "seed": 4}])
+        jobs = Q.build_jobs(self.root, ("cb12wd",), ("sensrt",))
+        self.assertEqual({j.key for j in jobs}, {("cb12wdx0.5", "sensrt", "dqn", s) for s in (1, 2, 3)})
+        j = jobs[0]
+        self.assertEqual(j.kind, "sensrt")
+        self.assertEqual(j.target.name, "sens_retuned_cb12wdx0.5.jsonl")
+        self.assertEqual(j.cmd[j.cmd.index("--instances") + 1], "cb12wdx0.5")
+        self.assertTrue(j.cmd[j.cmd.index("--tuned-file") + 1].endswith("tuned_ext_cb12wdx0.5.json"))   # config da PRÓPRIA variante
+        self.assertEqual(j.cmd[j.cmd.index("--methods") + 1], "dqn")
+        self.assertIn("--tuned", j.cmd)
+
+    def test_kind_rank_puts_finals_before_sens_before_sensrt_before_seo_before_ablation(self):
+        self.assertEqual(sorted(Q.KIND_RANK, key=Q.KIND_RANK.get), ["finals", "sens", "sensrt", "seo", "ablation"])
 
     def test_sens_names_match_instance_names(self):
         names = [n for lst in Q.SENS.values() for _, n in lst]

@@ -9,6 +9,8 @@
   = não inicia novas execuções e sai quando as em curso terminarem. Falhou 2 vezes → desiste daquela execução e segue.
 * `sens` (P3, DESVIOS.md 2026-10-14): 4 aprendizes × 5 sementes × variantes de cb4wd/cb12wd e braço legado de 4 est., com a config
   escolhida no P1 na escala-base; só entram instâncias cujos cenários val/test já existem em scenarios/.
+* `sensrt` (P3b, DESVIOS.md 2026-10-18): DQN com a config escolhida em validação NA PRÓPRIA variante (`runs/tuned_ext_<variante>.json`),
+  5 sementes (`runs/sens_retuned_<variante>.jsonl`); só entra a variante cujo arquivo de ajuste já existe.
 * Os reruns finais só entram para métodos cuja config escolhida em validação difere da original (regra do DESVIOS.md).
 
   python scripts/22_queue.py --kinds finals ablation --workers 4
@@ -40,8 +42,9 @@ SENS = {"cb4wd": [("cb4wdx0.5", "cb4wdx0.5"), ("cb4wdx0.75", "cb4wdx0.75"), ("cb
         "cb12wd": [("cb12wdx0.5", "cb12wdx0.5"), ("cb12wdx0.75", "cb12wdx0.75"), ("cb12wdx1.5", "cb12wdx1.5"), ("cb12we", "cb12we")]}
 SENS_METHODS = ("dqn", "linear", "tab_station", "tab_cluster")
 SENS_SEEDS = tuple(range(5))
+SENSRT = {"cb12wd": ("cb12wdx0.5", "cb12we")}   # P3b (DESVIOS.md 2026-10-18): DQN reajustado nas variantes em que a vantagem sumiu; 5 sementes
 SEO_VARIANTS = ("published", "gamma1")        # P4b (DESVIOS.md 2026-10-14): A2C adaptado de Seo et al. (2022); 10 sementes
-KIND_RANK = {"finals": 0, "sens": 1, "seo": 2, "ablation": 3}
+KIND_RANK = {"finals": 0, "sens": 1, "sensrt": 2, "seo": 3, "ablation": 4}
 
 
 @dataclass
@@ -108,6 +111,20 @@ def build_jobs(root, insts=INSTANCES, kinds=("finals", "ablation")):
                                    "--seeds", str(s), "--budget", str(BUDGET), "--eval-every", str(EVAL_EVERY), "--tuned",
                                    "--tuned-file", str(p_e), "--out", str(tmp)]
                             jobs.append(Job((name, "sens", m, s), "sens", est_cost(m, ext[m]["cfg"]), cmd, tmp, target))
+        if "sensrt" in kinds and inst in SENSRT:
+            for name in SENSRT[inst]:
+                p_v = root / "runs" / f"tuned_ext_{name}.json"          # config do DQN escolhida em validação NA PRÓPRIA variante
+                if not p_v.exists() or "dqn" not in load_json(p_v):
+                    continue
+                target = root / "runs" / f"sens_retuned_{name}.jsonl"
+                done = {r["seed"] for r in read_rows(target)}
+                for s in SENS_SEEDS:
+                    if s not in done:
+                        tmp = qdir / f"{name}_sensrt_dqn_{s}.jsonl"
+                        cmd = [py, "-I", str(root / "scripts" / "13_run_protocol.py"), "learners", "--instances", name, "--methods", "dqn",
+                               "--seeds", str(s), "--budget", str(BUDGET), "--eval-every", str(EVAL_EVERY), "--tuned",
+                               "--tuned-file", str(p_v), "--out", str(tmp)]
+                        jobs.append(Job((name, "sensrt", "dqn", s), "sensrt", est_cost("dqn", load_json(p_v)["dqn"]["cfg"]), cmd, tmp, target))
         if "finals" in kinds:
             target = root / "runs" / f"final_ext_{inst}.jsonl"
             done = {(r["method"], r["seed"]) for r in read_rows(target)}
@@ -206,7 +223,7 @@ def pid_alive(pid):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--kinds", nargs="+", default=["finals", "ablation"], choices=["finals", "sens", "seo", "ablation"])
+    ap.add_argument("--kinds", nargs="+", default=["finals", "ablation"], choices=["finals", "sens", "sensrt", "seo", "ablation"])
     ap.add_argument("--instances", nargs="+", default=list(INSTANCES))
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--poll", type=float, default=20.0)
@@ -217,7 +234,7 @@ def main():
     if lock.exists() and pid_alive(int(lock.read_text().strip() or 0)):
         raise SystemExit(f"já há uma fila em execução (PID {lock.read_text().strip()})")
     lock.write_text(str(os.getpid()))
-    required = {"finals": METHODS, "sens": SENS_METHODS, "seo": (), "ablation": ("dqn",)}
+    required = {"finals": METHODS, "sens": SENS_METHODS, "sensrt": (), "seo": (), "ablation": ("dqn",)}
 
     def complete():
         for inst in a.instances:
