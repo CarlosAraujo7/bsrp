@@ -6,6 +6,9 @@ TREINO, teste = replay de fluxos reais das semanas de TESTE.
 Sem DEMAND_SCALE: λ = média observada de partidas/chegadas por intervalo de 30 min. As chegadas NÃO são
 reescaladas para igualar as partidas: o sub-sistema de estações é aberto e o desequilíbrio líquido real é parte
 do problema.
+
+Escalas 4, 8 e 12 usam as estações legadas (CSVs `station_selected_<n>.csv`). Escalas MAIORES (P9, DESVIOS.md 2026-10-19) usam as 12 legadas
+mais as próximas de maior volume (`extended_base`).
 """
 from __future__ import annotations
 
@@ -20,6 +23,7 @@ from .env import DAY_START_H, INTERVAL_MIN, N_INTERVALS, Instance, ScenarioSet, 
 ROOT = Path(__file__).resolve().parents[1]
 FLOWS = ROOT / "data" / "processed" / "citibike_2024" / "flows_od.npz"
 OFFSET = DAY_START_H * 60 // INTERVAL_MIN        # 12: intervalo 0 do episódio = 06:00
+LEGACY_SIZES = (4, 8, 12)
 
 
 class Flows:
@@ -48,10 +52,38 @@ class Flows:
         return np.flatnonzero(m)
 
 
+def extended_base(n_stations: int, flows: Flows) -> Instance:
+    """n > 12: as 12 estações legadas + as (n − 12) de MAIOR VOLUME (partidas + chegadas nos dias úteis de TREINO) ainda fora do conjunto.
+    Ordem estável (volume decrescente, empate pela linha do arquivo); capacidade, lat/lon de manhattan_stations.json (idênticos aos legados nas 12);
+    sem agrupamento (`cluster` = 0: só a representação tabular por cluster o usa). λ não vem daqui (ver calibrated_instance)."""
+    base12 = legacy_instance(12)
+    mh = {s["short_name"]: s for s in json.load(open(ROOT / "manhattan_stations.json", encoding="utf-8")) if s.get("short_name")}
+    days = flows.days("train", 0)
+    vol = flows.dep[:, days, :].sum(axis=(1, 2)) + flows.arr[:, days, :].sum(axis=(1, 2))
+    taken = set(flows.rows_for(list(base12.station_names)))
+    names, cap, lat, lon = list(base12.station_names), list(base12.cap), list(base12.lat), list(base12.lon)
+    for r in np.argsort(-vol, kind="stable"):
+        if len(names) >= n_stations:
+            break
+        s = mh.get(flows.short[r])
+        if int(r) in taken or s is None or int(s["capacity"]) < 20 or flows.name2short.get(s["name"]) != flows.short[r] or s["name"] in names:
+            continue
+        names.append(s["name"]); cap.append(int(s["capacity"])); lat.append(float(s["lat"])); lon.append(float(s["lon"]))
+    if len(names) < n_stations:
+        raise ValueError(f"só {len(names)} estações elegíveis")
+    n = len(names)
+    z = np.zeros((N_INTERVALS, n))
+    return Instance(f"ext{n_stations}", np.array(cap, np.int64), np.zeros(n, np.int64), np.array(lat), np.array(lon), z, z.copy(), tuple(names))
+
+
+def _base(n_stations: int, flows: Flows) -> Instance:
+    return legacy_instance(n_stations) if n_stations in LEGACY_SIZES else extended_base(n_stations, flows)
+
+
 def calibrated_instance(n_stations: int, flows: Flows, day_type: int, name: str | None = None,
                         demand_scale: float = 1.0) -> Instance:
-    """Mesmas estações/clusters/capacidades do legado (n_stations ∈ {4,8,12}); λ das semanas de TREINO."""
-    base = legacy_instance(n_stations)
+    """Estações/clusters/capacidades: legados (n_stations ∈ {4,8,12}) ou `extended_base` (n_stations > 12); λ das semanas de TREINO."""
+    base = _base(n_stations, flows)
     rows = flows.rows_for(list(base.station_names))
     days = flows.days("train", day_type)
     sl = slice(OFFSET, OFFSET + N_INTERVALS)
@@ -65,7 +97,7 @@ def real_scenarios(n_stations: int, flows: Flows, split: str, day_type: int, jit
                    seed: int = 0) -> ScenarioSet:
     """Um cenário por DIA REAL do split/tipo de dia: demanda = contagens observadas (06h–22h); ocupação inicial
     desconhecida nos dados => 50% da capacidade ± jitter (sorteio fixado por `seed`), como nos cenários sintéticos."""
-    base = legacy_instance(n_stations)
+    base = _base(n_stations, flows)
     rows = flows.rows_for(list(base.station_names))
     days = flows.days(split, day_type)
     sl = slice(OFFSET, OFFSET + N_INTERVALS)

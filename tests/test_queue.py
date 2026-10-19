@@ -145,9 +145,28 @@ class TestBuildJobs(unittest.TestCase):
         self.assertFalse(Q.pid_alive(999999))                     # sem processo: a mensagem do tasklist não é UTF-8 (falhava com -X utf8)
         self.assertTrue(Q.pid_alive(os.getpid()))
 
+    def test_scale_jobs_use_the_12_station_config_and_wait_for_scenarios(self):
+        self.assertEqual(Q.build_jobs(self.root, ("cb12wd",), ("scale",)), [])                         # sem cenários: nada
+        sc = self.root / "scenarios"
+        sc.mkdir()
+        for k in ("val", "test"):
+            (sc / f"{k}_cb20wd.npz").write_bytes(b"")
+        (sc / "val_cb30wd.npz").write_bytes(b"")                                                       # só val: ainda não entra
+        dump(self.root / "runs" / "scale_cb20wd.jsonl", [{"method": "dqn", "seed": 0}, {"method": "dqn", "seed": 4}])
+        jobs = Q.build_jobs(self.root, ("cb12wd",), ("scale",))
+        self.assertEqual({j.key[0] for j in jobs}, {"cb20wd"})
+        self.assertEqual({j.key[2:] for j in jobs}, {("dqn_scale", s) for s in (1, 2, 3)} | {("dqn_scale2m", s) for s in range(5)})
+        j2 = next(j for j in jobs if j.key[2] == "dqn_scale2m")
+        j5 = next(j for j in jobs if j.key[2] == "dqn_scale")
+        self.assertEqual(j2.cmd[j2.cmd.index("--budget") + 1], "2000000")
+        self.assertEqual(j5.cmd[j5.cmd.index("--budget") + 1], "500000")
+        self.assertTrue(j5.cmd[j5.cmd.index("--tuned-file") + 1].endswith("tuned_ext_cb12wd.json"))   # config de 12 estações
+        self.assertEqual(j2.target.name, "scale2m_cb20wd.jsonl")
+        self.assertGreater(j2.cost, 3 * j5.cost)
+
     def test_kind_rank_orders_the_kinds(self):
         self.assertEqual(sorted(Q.KIND_RANK, key=Q.KIND_RANK.get),
-                         ["finals", "sens", "sensrt", "reseedfinals", "budget4x", "sensx", "seo", "ablation"])
+                         ["finals", "sens", "sensrt", "reseedfinals", "budget4x", "scale", "sensx", "seo", "ablation"])
 
     def test_sens_names_match_instance_names(self):
         names = [n for lst in Q.SENS.values() for _, n in lst]
