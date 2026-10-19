@@ -47,6 +47,27 @@ varia\c{c}\~oes do simulador e a dias reais? Contribu\'imos com: (i) inst\^ancia
 heur\'isticas calibradas em valida\c{c}\~ao e com um \emph{rollout} sobre o modelo; (iii) uma adapta\c{c}\~ao do A2C de \citet{seo2022}; (iv) uma abla\c{c}\~ao
 pareada por semente; e (v) uma an\'alise de sensibilidade, incluindo resultados negativos.
 
+\section{Trabalhos relacionados}
+\textbf{Rebalanceamento est\'atico e roteamento.} A pesquisa operacional trata a redistribui\c{c}\~ao noturna, com demanda desprez\'ivel, como um problema de
+roteamento com coleta e entrega: \citet{benchimol2011} d\~ao resultados de complexidade, limites inferiores e algoritmos de aproxima\c{c}\~ao;
+\citet{raviv2013} propõem formula\c{c}\~oes de programa\c{c}\~ao linear inteira mista que minimizam a insatisfa\c{c}\~ao dos usu\'arios sob demanda estoc\'astica;
+\citet{dellamico2014} comparam formula\c{c}\~oes e algoritmos \emph{branch-and-cut} e disponibilizam inst\^ancias de refer\^encia; e \citet{schuijbroek2017}
+combinam metas de n\'ivel de servi\c{c}o por esta\c{c}\~ao com o roteamento dos ve\'iculos em uma heur\'istica \emph{cluster-first, route-second}.
+
+\textbf{Rebalanceamento din\^amico.} Com a demanda ao longo do dia, \citet{ghosh2017} prop\~oem um modelo de otimiza\c{c}\~ao que considera as rotas e a demanda
+futura esperada, com decomposi\c{c}\~ao e agrega\c{c}\~ao de esta\c{c}\~oes para reduzir o tempo de c\'alculo; \citet{brinkmann2015,brinkmann2019} estudam
+estrat\'egias de curto prazo e pol\'iticas de \emph{lookahead} din\^amicas para o roteamento de estoque estoc\'astico.
+
+\textbf{Aprendizado por refor\c{c}o.} \citet{seo2022} combinam programa\c{c}\~ao din\^amica aproximada e aprendizado por refor\c{c}o no rebalanceamento de sistemas com
+docas; \citet{liang2024} comparam abordagens de uma e de duas pol\'iticas com DQN; \citet{guo2024} propõem um arcabou\c{c}o combinat\'orio de aprendizado por
+refor\c{c}o para o roteamento de estoque; e \citet{pan2019} usam aprendizado por refor\c{c}o profundo para a precifica\c{c}\~ao em sistemas sem docas, uma decis\~ao
+diferente da movimenta\c{c}\~ao de ve\'iculos que estudamos.
+
+\textbf{O que este trabalho acrescenta.} N\~ao reproduzimos os resultados desses trabalhos: seus simuladores, dados e m\'etricas diferem dos nossos. O foco \'e a
+compara\c{c}\~ao controlada, com heur\'isticas calibradas em valida\c{c}\~ao, um \emph{rollout} \citep{bertsekas1997} com o modelo verdadeiro como refer\^encia de
+planejamento e um protocolo que trata a semente de treino como unidade de an\'alise, com intervalos de confian\c{c}a \citep{henderson2018,agarwal2021}, sele\c{c}\~ao apenas
+em valida\c{c}\~ao e equival\^encia por TOST \citep{lakens2017}.
+
 \section{Problema e simulador}
 Um ve\'iculo de capacidade 20 percorre $n$ esta\c{c}\~oes ao longo de um dia operacional de 06h a 22h, em 32 intervalos de 30 minutos. A cada intervalo ele
 escolhe um destino e uma varia\c{c}\~ao de estoque na esta\c{c}\~ao atual ($\pm 5$, $\pm 10$ ou 0). As retiradas e devolu\c{c}\~oes seguem processos de
@@ -65,16 +86,16 @@ partidas terminam dentro da inst\^ancia, de modo que ignorar a conserva\c{c}\~ao
 \textbf{Refer\^encias sem aprendizado.} A pol\'itica \emph{parada} e uma heur\'istica gulosa com limiares de ocupa\c{c}\~ao e passo m\'aximo calibrados em
 valida\c{c}\~ao em grades estendidas at\'e o \'otimo ficar no interior; ela cont\'em como caso a estrat\'egia reativa de buffer de seguran\c{c}a de
 \citet{brinkmann2015}, usada como refer\^encia por \citet{seo2022}. Uma fam\'ilia por meta de ocupa\c{c}\~ao (\emph{threshold}) n\~ao a supera em valida\c{c}\~ao.
-\textbf{Rollout.} Para cada a\c{c}\~ao v\'alida, estima-se o retorno de executar a heur\'istica-base por $h$ decis\~oes em $K$ futuros amostrados do
+\textbf{Rollout} \citep{bertsekas1997}. Para cada a\c{c}\~ao v\'alida, estima-se o retorno de executar a heur\'istica-base por $h$ decis\~oes em $K$ futuros amostrados do
 \emph{modelo} de Poisson (n\~ao da demanda real). \textbf{Aprendizes.} Q-learning tabular (por agrupamento ou por esta\c{c}\~ao), aproxima\c{c}\~ao linear e
-rede 64--64 com DQN \citep{mnih2015} (m\'ascara de a\c{c}\~oes v\'alidas, \emph{replay}, rede-alvo e Double DQN), \emph{policy gradient} com linha de base e
-A2C adaptado de \citet{seo2022}: na variante \emph{publicada}, rede $3\times 24$, taxa de aprendizado $5\cdot 10^{-4}$, $\gamma = 0{,}9$, sem ajuste; na variante \emph{ajustada}, as taxas de aprendizado, $\gamma$, um bônus de entropia e a escala da recompensa s\~ao escolhidos em valida\c{c}\~ao entre 16 configura\c{c}\~oes, como nos demais aprendizes. Todos usam o mesmo
+rede 64--64 com DQN \citep{mnih2015} (m\'ascara de a\c{c}\~oes v\'alidas, \emph{replay}, rede-alvo e Double DQN \citep{vanhasselt2016}), \emph{policy gradient} com linha de base e
+A2C (\emph{advantage actor-critic} \citep{mnih2016}) adaptado de \citet{seo2022}: na variante \emph{publicada}, rede $3\times 24$, taxa de aprendizado $5\cdot 10^{-4}$, $\gamma = 0{,}9$, sem ajuste; na variante \emph{ajustada}, as taxas de aprendizado, $\gamma$, um bônus de entropia e a escala da recompensa s\~ao escolhidos em valida\c{c}\~ao entre 16 configura\c{c}\~oes, como nos demais aprendizes. Todos usam o mesmo
 or\c{c}amento de $500\,000$ passos de ambiente.
 
 \section{Protocolo experimental}
-A unidade de an\'alise \'e a semente de treino (10 por m\'etodo e escala); epis\'odios de avalia\c{c}\~ao n\~ao s\~ao amostras independentes. Hiperpar\^ametros
+A unidade de an\'alise \'e a semente de treino (10 por m\'etodo e escala); epis\'odios de avalia\c{c}\~ao n\~ao s\~ao amostras independentes \citep{henderson2018,agarwal2021}. Hiperpar\^ametros
 e a refer\^encia de heur\'istica s\~ao escolhidos apenas em valida\c{c}\~ao; o checkpoint reportado \'e o \'ultimo; o teste \'e tocado uma vez por configura\c{c}\~ao.
-Todos os m\'etodos veem os mesmos cen\'arios. Reportamos m\'edia e IC95\% $t$ sobre sementes, e a equival\^encia s\'o com TOST ($\delta = 0{,}5$). A busca de
+Todos os m\'etodos veem os mesmos cen\'arios. Reportamos m\'edia e IC95\% $t$ sobre sementes, e a equival\^encia s\'o com TOST \citep{lakens2017} ($\delta = 0{,}5$). A busca de
 hiperpar\^ametros usa o mesmo n\'umero de configura\c{c}\~oes (16) para todos os m\'etodos; o primeiro experimento, com 8, deixou o \'otimo do DQN no limite do
 espa\c{c}o, o que motivou a extens\~ao (Se\c{c}\~ao~\ref{sec:busca}).
 
