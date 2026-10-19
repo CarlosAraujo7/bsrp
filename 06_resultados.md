@@ -116,7 +116,7 @@
 | 20 est. | 359,8 | 277,3 | 219,1 [214,9; 223,2] (n = 5) | 21% | 206,1 [203,8; 208,5] (n = 5) | 26% | 71,1 [68,8; 73,5] |
 | 30 est. | 466,8 | 378,5 | 338,5 [334,9; 342,0] (n = 5) | 11% | 317,3 [311,4; 323,3] (n = 5) | 16% | 61,2 [55,3; 67,1] |
 
-(Rollout e clarividente não foram rodados em 20/30 estações; as estações acrescentadas têm volume maior que as 12 legadas.)
+(Rollout em 20/30 estações: (h, K) = (3, 64) sem ajuste, nos primeiros cenários de teste; o clarividente não foi rodado nessas escalas; as estações acrescentadas têm volume maior que as 12 legadas.)
 
 ### 6.3 Sensibilidade do DQN com 10 sementes (variantes de 12 est. em que a conclusão mudou)
 

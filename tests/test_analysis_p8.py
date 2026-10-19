@@ -198,7 +198,47 @@ class TestScaleData(unittest.TestCase):
 
     def test_section_lists_pending_and_the_no_rollout_note(self):
         txt = "\n".join(P8.scale_section(self.tmp))
-        self.assertIn("O rollout não foi rodado em 20/30 estações", txt)
+        self.assertIn("O rollout em 20/30 estações usa (h, K) = (3, 64) sem ajuste", txt)
+        self.assertIn("não rodado", txt)                                         # sem episódios de rollout: coluna marcada
+
+
+class TestScaleRollout(unittest.TestCase):
+    """P9c: rollout por episódio em 20/30 estações, comparado à heurística e ao DQN NOS MESMOS n primeiros cenários."""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._td.name)
+        t = self.tmp
+        inst = "cb20wd"
+        rng = np.random.default_rng(4)
+        dump(t / f"heuristics_scale_{inst}.jsonl", [
+            {"instance": inst, "method": "stay", "test_mean": -360.0, "test_rewards": [-360.0] * 1000},
+            {"instance": inst, "method": "greedy_cal", "policy": "g", "val_table": {"c": -280.0}, "test_mean": -278.0, "test_rewards": [-250.0] * 5 + [-278.0] * 995}])
+        # DQN: nos 5 primeiros cenários é pior que no resto (a comparação por subconjunto deve usar só os 5 primeiros)
+        dump(t / f"scale_{inst}.jsonl", [{"method": "dqn", "seed": s, "test_mean": -220.0, "test_rewards": [-240.0] * 5 + [-219.0] * 995} for s in range(3)])
+        dump(t / f"scale2m_{inst}.jsonl", [{"method": "dqn", "seed": s, "test_mean": -200.0, "test_rewards": [-200.0 + float(rng.normal(0, 0.5))] * 1000} for s in range(3)])
+        rows = [{"instance": inst, "set": "test", "idx": k, "reward": -210.0} for k in range(5)] + \
+               [{"instance": inst, "set": "real_test", "idx": k, "reward": -190.0} for k in range(24)]
+        dump(t / f"rollout_scale_{inst}.jsonl", rows)
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def test_rollout_is_compared_on_the_same_first_scenarios(self):
+        d = P8.scale_data(self.tmp, scales=("cb20wd",))["cb20wd"]
+        ro = d["rollout"]
+        self.assertEqual(ro["n"], 5)
+        self.assertAlmostEqual(ro["heur_sub"], 250.0)                              # heurística nos 5 primeiros, não nos 1000
+        self.assertAlmostEqual(ro["red"], 100 * (250 - 210) / 250)
+        self.assertAlmostEqual(ro["500k"]["dqn_red"], 100 * (250 - 240) / 250)     # DQN também nos 5 primeiros
+        self.assertAlmostEqual(ro["500k"]["c"], -240.0 - (-210.0))                 # DQN − rollout em reward: negativo = rollout melhor
+        self.assertGreater(ro["2m"]["c"], 0)
+
+    def test_incomplete_episodes_do_not_produce_a_rollout_entry(self):
+        rows = [{"instance": "cb20wd", "set": "test", "idx": k, "reward": -210.0} for k in range(5)] + \
+               [{"instance": "cb20wd", "set": "real_test", "idx": k, "reward": -190.0} for k in range(10)]        # faltam dias reais
+        dump(self.tmp / "rollout_scale_cb20wd.jsonl", rows)
+        self.assertNotIn("rollout", P8.scale_data(self.tmp, scales=("cb20wd",))["cb20wd"])
 
 
 if __name__ == "__main__":

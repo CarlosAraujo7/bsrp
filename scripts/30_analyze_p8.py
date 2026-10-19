@@ -295,6 +295,33 @@ SCALES = ("cb4wd", "cb8wd", "cb12wd", "cb20wd", "cb30wd")
 N_ST = {"cb4wd": 4, "cb8wd": 8, "cb12wd": 12, "cb20wd": 20, "cb30wd": 30}
 
 
+def scale_rollout(runs, inst, heur_row, rows500k, rows2m):
+    """P9c (DESVIOS.md 2026-10-19): rollout (h, K) fixos em cb20wd/cb30wd, por episódio (runs/rollout_scale_<inst>.jsonl), nos n primeiros cenários de teste;
+    heurística e DQN comparados NOS MESMOS n cenários. None se faltar algum episódio."""
+    p = Path(runs) / f"rollout_scale_{inst}.jsonl"
+    if not p.exists():
+        return None
+    last = {}
+    for r in rows_of(p):
+        last[(r["set"], r["idx"])] = r["reward"]
+    n_test = max((k for s_, k in last if s_ == "test"), default=-1) + 1
+    n_real = max((k for s_, k in last if s_ == "real_test"), default=-1) + 1
+    if n_test < 2 or any(("test", k) not in last for k in range(n_test)) or n_real != 24 or any(("real_test", k) not in last for k in range(n_real)):
+        return None
+    roll = np.array([last[("test", k)] for k in range(n_test)])
+    hs = np.array(heur_row["test_rewards"][:n_test])
+    m_roll, m_heur = float(roll.mean()), float(hs.mean())
+    out = {"n": n_test, "mean": -m_roll, "red": 100 * (m_heur - m_roll) / m_heur, "heur_sub": -m_heur,
+           "real": -float(np.mean([last[("real_test", k)] for k in range(n_real)])), "subset": True}
+    for tag, rows in (("500k", rows500k), ("2m", rows2m)):
+        if len(rows) >= 2:
+            x = np.array([float(np.mean(r["test_rewards"][:n_test])) for r in rows])
+            d = x - m_roll                                   # reward: positivo favorece o DQN
+            lo, hi = ci_t(d)
+            out[tag] = {"dqn_red": float(100 * (m_heur - x.mean()) / m_heur), "c": float(d.mean()), "c_lo": float(lo), "c_hi": float(hi)}
+    return out
+
+
 def scale_data(runs, scales=SCALES):
     """P9 (DESVIOS.md 2026-10-19): DQN × heurística calibrada ao longo da escala (4 → 30 estações), com 500 mil e 2 milhões de passos.
     Demanda perdida POSITIVA. 4/8/12: 500 mil = 10 sementes do experimento principal; 2 M = budget4x (5 sementes). 20/30: scale_/scale2m_ (5 sementes).
@@ -335,7 +362,10 @@ def scale_data(runs, scales=SCALES):
         ro = [r for f in sorted(runs.glob(f"rollout_{inst}*.jsonl")) for r in rows_of(f)]
         if ro:
             b = max(ro, key=lambda r: r["val_mean"])
-            rec["rollout"] = {"mean": -b["test_mean"], "red": float(100 * (h["test_mean"] - b["test_mean"]) / h["test_mean"])}
+            rec["rollout"] = {"mean": -b["test_mean"], "red": float(100 * (h["test_mean"] - b["test_mean"]) / h["test_mean"]), "n": len(b["test_rewards"])}
+        rs = scale_rollout(runs, inst, h, s5, s2)
+        if rs:
+            rec["rollout"] = rs
         out[inst] = rec
     return out
 
@@ -374,7 +404,7 @@ def scale_section(runs):
          "> Instâncias `cb20wd` e `cb30wd` (12 legadas + as de maior volume; DESVIOS.md 2026-10-19). DQN com a config do P1 de 12 estações, **sem reajuste**, 5 sementes "
          "(4/8/12: as 10 sementes do experimento principal para 500 mil passos e as 5 de `budget4x` para 2 milhões). Referência = heurística calibrada em validação. "
          "Demanda perdida por dia no teste sintético (1000 cenários); C1 = DQN − heurística em reward (positivo favorece o DQN); redução = relativa à heurística. "
-         "O rollout não foi rodado em 20/30 estações. As estações acrescentadas têm volume maior que as 12 legadas: o efeito do tamanho não está isolado.\n",
+         "O rollout em 20/30 estações usa (h, K) = (3, 64) sem ajuste e só os n primeiros cenários de teste (heurística e DQN comparados nos mesmos n; coluna 'rollout'). As estações acrescentadas têm volume maior que as 12 legadas: o efeito do tamanho não está isolado.\n",
          "| escala | parada | heurística | DQN 500 mil [IC95%] | C1 500 mil [IC95%] | redução | DQN 2 M [IC95%] | C1 2 M [IC95%] | redução | rollout (redução) |",
          "|---|---|---|---|---|---|---|---|---|---|"]
     for inst, r in d.items():
@@ -385,7 +415,7 @@ def scale_section(runs):
                 cells += [f"{fmt(t['mean'])} [{fmt(t['lo'])}; {fmt(t['hi'])}] (n = {t['n']})", f"{fmt(t['c1'])} [{fmt(t['c1_lo'])}; {fmt(t['c1_hi'])}]", f"{t['red']:.0f}%"]
             else:
                 cells += ["(pendente)", "", ""]
-        ro = f"{fmt(r['rollout']['mean'])} ({r['rollout']['red']:.0f}%)" if "rollout" in r else "não rodado"
+        ro = (f"{fmt(r['rollout']['mean'])} ({r['rollout']['red']:.0f}%" + (f"; {r['rollout']['n']} cen." if r["rollout"].get("subset") else "") + ")") if "rollout" in r else "não rodado"
         L.append(f"| {r['n_st']} est. | {fmt(r['stay'])} | {fmt(r['heur'])} | " + " | ".join(cells) + f" | {ro} |")
     rt = scale_retuned_data(runs)
     if rt is not None:

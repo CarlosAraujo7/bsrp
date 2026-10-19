@@ -28,7 +28,7 @@ calibradas com viagens reais do Citi Bike (2024; com extens\~ao a 20 e 30 esta\c
 avalia\c{c}\~ao em 1000 cen\'arios sint\'eticos e em 24 dias reais n\~ao vistos. Uma rede 64--64 treinada com DQN reduz a demanda perdida em
 \redA\%, \redB\% e \redC\% (4, 8 e 12 esta\c{c}\~oes) em rela\c{c}\~ao \`a melhor heur\'istica calibrada. Por\'em, um \emph{rollout} que usa o modelo
 verdadeiro da demanda supera o DQN com 8 e 12 esta\c{c}\~oes no teste sint\'etico, enquanto o DQN fica \`a frente ou empata nos dias reais;
-com o qu\'adruplo do or\c{c}amento de treino, o DQN empata com o \emph{rollout} com 8 esta\c{c}\~oes e continua atr\'as com 12.
+com o qu\'adruplo do or\c{c}amento de treino, o DQN empata com o \emph{rollout} com 8 esta\c{c}\~oes e continua atr\'as com 12 e, sem reajuste, com 20 e 30.
 Representa\c{c}\~oes tabulares e lineares n\~ao superam a heur\'istica; um A2C adaptado de um trabalho publicado, com os hiperpar\^ametros originais, n\~ao \'e competitivo e, mesmo ajustado com o mesmo or\c{c}amento dos demais, s\'o supera a heur\'istica com 4 esta\c{c}\~oes e fica atr\'as do DQN em todas as escalas.
 Na abla\c{c}\~ao, apenas o \emph{replay} \'e comprovadamente necess\'ario. A vantagem do DQN n\~ao se mant\'em com demanda baixa em 12 esta\c{c}\~oes. Um planejador clarividente mostra que o limite de demanda perdida \'e frouxo: quase toda ela \'e evit\'avel com conhecimento do futuro.
 A vantagem relativa do DQN sobre a heur\'istica diminui com o tamanho do sistema (de \scRedFiveA\% com 4 esta\c{c}\~oes a \scRedFiveE\% com 30, sem reajuste de hiperpar\^ametros).
@@ -167,14 +167,18 @@ disso. O DQN continua melhor que a heur\'istica, com C1 (DQN $-$ heur\'istica, e
 [\scCFiveLoE; \scCFiveHiE] com 30 (500 mil passos), mas a redu\c{c}\~ao relativa cai de \redA\%, \redB\% e \redC\% (4, 8 e 12 esta\c{c}\~oes) para \scRedFiveD\% e
 \scRedFiveE\%. Com 2 milh\~oes de passos ela \'e de \scRedTwoMA\%, \scRedTwoMB\%, \scRedTwoMC\%, \scRedTwoMD\% e \scRedTwoME\% com 4, 8, 12, 20 e 30 esta\c{c}\~oes: a
 queda com o tamanho do sistema \'e mon\'otona nos dois or\c{c}amentos. O experimento n\~ao isola o efeito do tamanho: as esta\c{c}\~oes acrescentadas t\^em volume maior que as 12
-originais, a configura\c{c}\~ao vem da escala de 12 esta\c{c}\~oes, e o \emph{rollout} e o limite clarividente n\~ao foram rodados nessas escalas por custo. Para separar a escala da configura\c{c}\~ao herdada, repetimos com 30 esta\c{c}\~oes a busca do
+originais, a configura\c{c}\~ao vem da escala de 12 esta\c{c}\~oes, e o limite clarividente n\~ao foi rodado nessas escalas por custo. O \emph{rollout}, com $(h,K)=(3,64)$ sem ajuste e nos primeiros \scRollN\ cen\'arios de teste (heur\'istica e DQN comparados nos
+mesmos cen\'arios), reduz \scRollRedD\% e \scRollRedE\% da demanda perdida da heur\'istica com 20 e 30 esta\c{c}\~oes (contra \scRollRedA\%, \scRollRedB\% e \scRollRedC\% com 4, 8 e 12):
+o declínio com a escala tamb\'em aparece nele, de modo que parte da queda \'e dificuldade do problema, mas \'e bem mais lento que o do DQN. Com 20 e 30 esta\c{c}\~oes o \emph{rollout} \'e
+melhor que o DQN nos dois or\c{c}amentos (DQN $-$ \emph{rollout}, em \emph{reward}: \scRollCFiveD\ [\scRollCFiveLoD; \scRollCFiveHiD] e \scRollCFiveE\ [\scRollCFiveLoE; \scRollCFiveHiE] com 500 mil passos;
+\scRollCTwoMD\ [\scRollCTwoMLoD; \scRollCTwoMHiD] e \scRollCTwoME\ [\scRollCTwoMLoE; \scRollCTwoMHiE] com 2 milh\~oes; negativo favorece o \emph{rollout}). Para separar a escala da configura\c{c}\~ao herdada, repetimos com 30 esta\c{c}\~oes a busca do
 mesmo or\c{c}amento (\scRtNConf\ configura\c{c}\~oes, 2 sementes de ajuste): a escolhida em valida\c{c}\~ao foi a mesma de 12 esta\c{c}\~oes (demanda perdida em valida\c{c}\~ao de \scRtVal\ contra \scRtValSecond\ da
 segunda melhor), de modo que a configura\c{c}\~ao herdada n\~ao explica a queda dentro desse espa\c{c}o de busca; n\~ao se exclui que alguma configura\c{c}\~ao fora dele a reduza.
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.75\textwidth]{fig_escala.pdf}
-\caption{Redu\c{c}\~ao da demanda perdida em rela\c{c}\~ao \`a heur\'istica calibrada, de 4 a 30 esta\c{c}\~oes (teste sint\'etico; faixa: IC95\% sobre sementes). O \emph{rollout} n\~ao foi rodado com 20 e 30 esta\c{c}\~oes.}
+\caption{Redu\c{c}\~ao da demanda perdida em rela\c{c}\~ao \`a heur\'istica calibrada, de 4 a 30 esta\c{c}\~oes (teste sint\'etico; faixa: IC95\% sobre sementes). Com 20 e 30 esta\c{c}\~oes o \emph{rollout} usa $(h,K)=(3,64)$ sem ajuste e 300 cen\'arios de teste.}
 \label{fig:escala}
 \end{figure}
 
@@ -240,14 +244,14 @@ $\times 1$ n\~ao explica essa perda sozinha; n\~ao se exclui que alguma configur
 \section{Limita\c{c}\~oes}\label{sec:lim}
 O simulador n\~ao tem roteamento nem tempo de viagem, e o estudo usa um \'unico ve\'iculo; os resultados n\~ao se estendem a frotas ou a rotas reais. A
 ocupa\c{c}\~ao inicial dos dias reais \'e desconhecida, e o modelo de Poisson superestima a dificuldade em 30--40\% em rela\c{c}\~ao aos dias reais. O
-\emph{rollout} usa o modelo verdadeiro. O A2C \'e uma adapta\c{c}\~ao; a escolha de suas configura\c{c}\~oes usa apenas duas sementes de ajuste. A sensibilidade usa 5 sementes (10 nas duas variantes de 12 esta\c{c}\~oes em que a conclus\~ao mudou) e n\~ao reajusta os aprendizes, exceto o DQN nessas duas variantes. O DQN foi testado com at\'e o qu\'adruplo do or\c{c}amento de treino; as inst\^ancias de 20 e 30 esta\c{c}\~oes usam a configura\c{c}\~ao de 12 esta\c{c}\~oes, e as heur\'isticas e o \emph{rollout} usam as grades de calibra\c{c}\~ao descritas. O teto de lote (\emph{batch}) de 256 do DQN \'e imposto por custo; uma verifica\c{c}\~ao com 512 e duas sementes n\~ao mostrou ganho consistente, mas n\~ao exclui um ganho pequeno com 12 esta\c{c}\~oes. Nenhuma
+\emph{rollout} usa o modelo verdadeiro. O A2C \'e uma adapta\c{c}\~ao; a escolha de suas configura\c{c}\~oes usa apenas duas sementes de ajuste. A sensibilidade usa 5 sementes (10 nas duas variantes de 12 esta\c{c}\~oes em que a conclus\~ao mudou) e n\~ao reajusta os aprendizes, exceto o DQN nessas duas variantes. O DQN foi testado com at\'e o qu\'adruplo do or\c{c}amento de treino; as inst\^ancias de 20 e 30 esta\c{c}\~oes usam a configura\c{c}\~ao de 12 esta\c{c}\~oes e um \emph{rollout} sem ajuste em 300 cen\'arios, e as heur\'isticas e o \emph{rollout} usam as grades de calibra\c{c}\~ao descritas. O teto de lote (\emph{batch}) de 256 do DQN \'e imposto por custo; uma verifica\c{c}\~ao com 512 e duas sementes n\~ao mostrou ganho consistente, mas n\~ao exclui um ganho pequeno com 12 esta\c{c}\~oes. Nenhuma
 das conclus\~oes foi validada em dados brasileiros ainda. Os resultados preliminares que eram nossa base de partida tinham defeitos (uma semente, escolha
 e teste na mesma amostra, heur\'isticas n\~ao calibradas, DQN mal treinado); n\~ao os usamos.
 
 \section{Conclus\~ao}
 Em inst\^ancias calibradas com viagens reais, uma rede neural com DQN reduz a demanda perdida em \redA\%, \redB\% e \redC\% (4, 8 e 12 esta\c{c}\~oes) em rela\c{c}\~ao a uma heur\'istica
 bem calibrada, e o resultado se mant\'em em dias reais; por\'em, um planejador com o modelo verdadeiro o supera no teste sint\'etico com
-12 esta\c{c}\~oes (e com 8 esta\c{c}\~oes no or\c{c}amento de 500 mil passos, mas n\~ao com o qu\'adruplo), e a vantagem n\~ao \'e robusta a demanda baixa com 12 esta\c{c}\~oes. O \emph{replay} \'e o \'unico componente comprovadamente
+12 esta\c{c}\~oes (com 8 esta\c{c}\~oes s\'o no or\c{c}amento de 500 mil passos; com 20 e 30, nos dois or\c{c}amentos), e a vantagem n\~ao \'e robusta a demanda baixa com 12 esta\c{c}\~oes. O \emph{replay} \'e o \'unico componente comprovadamente
 necess\'ario, representa\c{c}\~oes simples n\~ao bastam, e a vantagem relativa do DQN diminui com o n\'umero de esta\c{c}\~oes (de \scRedFiveA\% com 4 a \scRedFiveE\% com 30, sem reajuste). Trabalhos futuros: roteamento e frota, o estudo de caso com dados brasileiros
 (\pend{Tembici}) e um baseline de planejamento mais forte (mais futuros e horizonte maiores).
 

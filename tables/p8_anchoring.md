@@ -61,15 +61,15 @@
 
 ## (d) Escala maior: 20 e 30 estações (P9)
 
-> Instâncias `cb20wd` e `cb30wd` (12 legadas + as de maior volume; DESVIOS.md 2026-10-19). DQN com a config do P1 de 12 estações, **sem reajuste**, 5 sementes (4/8/12: as 10 sementes do experimento principal para 500 mil passos e as 5 de `budget4x` para 2 milhões). Referência = heurística calibrada em validação. Demanda perdida por dia no teste sintético (1000 cenários); C1 = DQN − heurística em reward (positivo favorece o DQN); redução = relativa à heurística. O rollout não foi rodado em 20/30 estações. As estações acrescentadas têm volume maior que as 12 legadas: o efeito do tamanho não está isolado.
+> Instâncias `cb20wd` e `cb30wd` (12 legadas + as de maior volume; DESVIOS.md 2026-10-19). DQN com a config do P1 de 12 estações, **sem reajuste**, 5 sementes (4/8/12: as 10 sementes do experimento principal para 500 mil passos e as 5 de `budget4x` para 2 milhões). Referência = heurística calibrada em validação. Demanda perdida por dia no teste sintético (1000 cenários); C1 = DQN − heurística em reward (positivo favorece o DQN); redução = relativa à heurística. O rollout em 20/30 estações usa (h, K) = (3, 64) sem ajuste e só os n primeiros cenários de teste (heurística e DQN comparados nos mesmos n; coluna 'rollout'). As estações acrescentadas têm volume maior que as 12 legadas: o efeito do tamanho não está isolado.
 
 | escala | parada | heurística | DQN 500 mil [IC95%] | C1 500 mil [IC95%] | redução | DQN 2 M [IC95%] | C1 2 M [IC95%] | redução | rollout (redução) |
 |---|---|---|---|---|---|---|---|---|---|
 | 4 est. | 46,94 | 24,46 | 9,77 [9,37; 10,18] (n = 10) | 14,69 [14,28; 15,10] | 60% | 9,28 [9,07; 9,49] (n = 5) | 15,18 [14,97; 15,39] | 62% | 11,83 (52%) |
 | 8 est. | 89,77 | 52,79 | 29,69 [29,03; 30,34] (n = 10) | 23,10 [22,45; 23,76] | 44% | 27,54 [26,28; 28,79] (n = 5) | 25,25 [24,00; 26,51] | 48% | 27,08 (49%) |
 | 12 est. | 131,34 | 80,45 | 55,94 [54,74; 57,14] (n = 10) | 24,51 [23,31; 25,71] | 30% | 52,04 [50,01; 54,08] (n = 5) | 28,41 [26,37; 30,45] | 35% | 48,10 (40%) |
-| 20 est. | 359,83 | 277,27 | 219,09 [214,95; 223,23] (n = 5) | 58,18 [54,04; 62,32] | 21% | 206,14 [203,81; 208,47] (n = 5) | 71,13 [68,80; 73,46] | 26% | não rodado |
-| 30 est. | 466,81 | 378,52 | 338,45 [334,87; 342,03] (n = 5) | 40,07 [36,49; 43,65] | 11% | 317,32 [311,38; 323,26] (n = 5) | 61,21 [55,27; 67,15] | 16% | não rodado |
+| 20 est. | 359,83 | 277,27 | 219,09 [214,95; 223,23] (n = 5) | 58,18 [54,04; 62,32] | 21% | 206,14 [203,81; 208,47] (n = 5) | 71,13 [68,80; 73,46] | 26% | 202,88 (28%; 300 cen.) |
+| 30 est. | 466,81 | 378,52 | 338,45 [334,87; 342,03] (n = 5) | 40,07 [36,49; 43,65] | 11% | 317,32 [311,38; 323,26] (n = 5) | 61,21 [55,27; 67,15] | 16% | 295,74 (23%; 300 cen.) |
 ### (d2) DQN reajustado em 30 estações (P9b)
 
 A reavaliação do pool de 16 configs escolheu a mesma config do P1 de 12 estações (nº 9; val -372,37 contra -376,41 da segunda melhor): seleção confirmada; o resultado é o de 500 mil passos acima. Leitura pré-fixada: a configuração herdada de 12 estações não explica a queda da vantagem (dentro deste espaço de busca).

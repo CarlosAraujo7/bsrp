@@ -187,7 +187,7 @@ def fig_scale(SC, outdir, RT=None):
     if RT and "n" in RT and not RT["same"]:
         ax.scatter([30], [RT["red"]], marker="D", s=34, color=COL["dqn"], edgecolor=INK, lw=0.8, zorder=4, label="DQN reajustado em 30 est. (500 mil)")
         csv_rows.append(["reajustado_30", 30, f"{RT['red']:.1f}", "", RT["n"]])
-    ro = [(r["n_st"], r["rollout"]["red"]) for r in SC.values() if "rollout" in r]
+    ro = [(r["n_st"], r["rollout"]["red"]) for r in SC.values() if "rollout" in r]    # 20/30: subconjunto de cenários (ver legenda)
     if ro:
         ax.plot([n for n, _ in ro], [v for _, v in ro], "-", color=COL["rollout"], lw=1.6, marker="s", ms=4.5, label="Rollout (modelo)", zorder=3)
         csv_rows += [["rollout", n, f"{v:.1f}", "", ""] for n, v in ro]
@@ -458,6 +458,15 @@ def write_tables_and_macros(R, A, S, root, runs):
     for inst, r in P8["scale"].items():                                                 # P9: escala maior (4 -> 30 estações)
         L = SC_LETTER[inst]
         mac[f"scStay{L}"], mac[f"scHeur{L}"] = pt(r["stay"]), pt(r["heur"])
+        if "rollout" in r:
+            ro = r["rollout"]
+            mac[f"scRollRed{L}"] = f"{ro['red']:.0f}"
+            if ro.get("subset"):
+                mac["scRollN"] = str(ro["n"])
+                for tag, nm in (("500k", "Five"), ("2m", "TwoM")):
+                    if tag in ro:
+                        mac[f"scRollDqnRed{nm}{L}"] = f"{ro[tag]['dqn_red']:.0f}"
+                        mac[f"scRollC{nm}{L}"], mac[f"scRollC{nm}Lo{L}"], mac[f"scRollC{nm}Hi{L}"] = pt(ro[tag]["c"]), pt(ro[tag]["c_lo"]), pt(ro[tag]["c_hi"])
         for tag, nm in (("500k", "Five"), ("2m", "TwoM")):
             if tag in r:
                 t = r[tag]
@@ -614,7 +623,7 @@ def write_results_md(R, A, S, root):
                 t2 = r.get("2m")
                 L.append(f"| {r['n_st']} est. | {pt(r['stay'])} | {pt(r['heur'])} | " + " | ".join(c) + " | "
                          + (f"{pt(t2['c1'], 1)} [{pt(t2['c1_lo'], 1)}; {pt(t2['c1_hi'], 1)}]" if t2 else "") + " |")
-            L += ["\n(Rollout e clarividente não foram rodados em 20/30 estações; as estações acrescentadas têm volume maior que as 12 legadas.)\n"]
+            L += ["\n(Rollout em 20/30 estações: (h, K) = (3, 64) sem ajuste, nos primeiros cenários de teste; o clarividente não foi rodado nessas escalas; as estações acrescentadas têm volume maior que as 12 legadas.)\n"]
         if P8.get("p3c"):
             L += ["### 6.3 Sensibilidade do DQN com 10 sementes (variantes de 12 est. em que a conclusão mudou)\n",
                   "| variante | n | C1 sem reajuste [IC95%] | C1 reajustado [IC95%] | reajustado − sem reajuste [IC95% Welch] |", "|---|---|---|---|---|"]
@@ -694,6 +703,10 @@ def check_claims(R, A, S):
         for tag, nm in (("500k", "500 mil"), ("2m", "2 milhões")):
             reds = [sc[k][tag]["red"] for k in order]
             out.append((all(a > b for a, b in zip(reds, reds[1:])), f"P9: a redução relativa do DQN ({nm} de passos) vs heurística diminui monotonicamente de 4 a 30 estações"))
+        rr = [sc[k]["rollout"]["red"] for k in order if "rollout" in sc[k]]
+        out.append((len(rr) == 5 and all(x > y for x, y in zip(rr, rr[1:])), "P9c: a redução relativa do rollout também diminui monotonicamente de 4 a 30 estações"))
+        out.append((all(sc[k]["rollout"][tag]["c_hi"] < 0 for k in ("cb20wd", "cb30wd") for tag in ("500k", "2m") if tag in sc[k].get("rollout", {})),
+                    "P9c: com 20 e 30 estações o rollout (sem ajuste) é melhor que o DQN, com 500 mil e 2 milhões de passos (IC exclui 0)"))
         out.append((all(sc[k][tag]["c1_lo"] > 0 for k in ("cb20wd", "cb30wd") for tag in ("500k", "2m")),
                     "P9: o DQN supera a heurística calibrada em 20 e 30 estações (IC de C1 exclui 0), com 500 mil e 2 milhões de passos"))
     p3c = {it["name"]: it for it in P8["p3c"] if "pending" not in it}
