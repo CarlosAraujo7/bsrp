@@ -263,7 +263,8 @@ def workers_from_file(qdir, default):
 
 
 def pid_alive(pid):
-    out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True).stdout
+    # errors="replace": com `python -X utf8` a mensagem localizada do tasklist (cp850) não decodifica e `out` viria None
+    out = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/NH"], capture_output=True, text=True, errors="replace").stdout or ""
     return str(pid) in out and "python" in out.lower()
 
 

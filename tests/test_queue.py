@@ -140,6 +140,11 @@ class TestBuildJobs(unittest.TestCase):
         self.assertTrue(j.cmd[j.cmd.index("--tuned-file") + 1].endswith("tuned_reseed_cb12wd.json"))
         self.assertEqual(j.cmd[j.cmd.index("--budget") + 1], str(Q.BUDGET))
 
+    def test_pid_alive_survives_localized_tasklist_output_and_detects_this_process(self):
+        import os
+        self.assertFalse(Q.pid_alive(999999))                     # sem processo: a mensagem do tasklist não é UTF-8 (falhava com -X utf8)
+        self.assertTrue(Q.pid_alive(os.getpid()))
+
     def test_kind_rank_orders_the_kinds(self):
         self.assertEqual(sorted(Q.KIND_RANK, key=Q.KIND_RANK.get),
                          ["finals", "sens", "sensrt", "reseedfinals", "budget4x", "sensx", "seo", "ablation"])
