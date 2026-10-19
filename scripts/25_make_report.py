@@ -28,6 +28,9 @@ _s = importlib.util.spec_from_file_location("an21", ROOT / "scripts" / "21_analy
 AN = importlib.util.module_from_spec(_s)
 _s.loader.exec_module(AN)
 rows_of, ci_t, welch = AN.rows_of, AN.ci_t, AN.welch
+_s30 = importlib.util.spec_from_file_location("an30", ROOT / "scripts" / "30_analyze_p8.py")
+AN30 = importlib.util.module_from_spec(_s30)
+_s30.loader.exec_module(AN30)
 
 BASES = ("cb4wd", "cb8wd", "cb12wd")
 LETTER = {"cb4wd": "A", "cb8wd": "B", "cb12wd": "C"}
@@ -168,6 +171,35 @@ def retuned(runs: Path) -> dict:
 # ──────────────────────────────────────────────────────────────────────────────
 # FIGURAS
 # ──────────────────────────────────────────────────────────────────────────────
+def fig_scale(SC, outdir):
+    """P9: redução da demanda perdida em relação à heurística calibrada, de 4 a 30 estações (DQN 500 mil e 2 milhões de passos; rollout só até 12)."""
+    fig, ax = plt.subplots(figsize=(5.4, 3.2))
+    csv_rows = []
+    for tag, label, ls, filled in (("500k", "DQN, 500 mil passos", "-", True), ("2m", "DQN, 2 milhões de passos", "--", False)):
+        pts = [(r["n_st"], r[tag]) for r in SC.values() if tag in r]
+        if not pts:
+            continue
+        xs = [n for n, _ in pts]
+        ys = [t["red"] for _, t in pts]
+        ax.fill_between(xs, [t["red_lo"] for _, t in pts], [t["red_hi"] for _, t in pts], color=COL["dqn"], alpha=0.12, lw=0)
+        ax.plot(xs, ys, ls, color=COL["dqn"], lw=1.6, marker="o", ms=5, mfc=COL["dqn"] if filled else "white", mec=COL["dqn"], label=label, zorder=3)
+        csv_rows += [[tag, n, f"{t['red']:.1f}", f"{t['red_lo']:.1f}..{t['red_hi']:.1f}", t["n"]] for n, t in pts]
+    ro = [(r["n_st"], r["rollout"]["red"]) for r in SC.values() if "rollout" in r]
+    if ro:
+        ax.plot([n for n, _ in ro], [v for _, v in ro], "-", color=COL["rollout"], lw=1.6, marker="s", ms=4.5, label="Rollout (modelo)", zorder=3)
+        csv_rows += [["rollout", n, f"{v:.1f}", "", ""] for n, v in ro]
+    ax.axhline(0, color=AXIS, lw=1.0, zorder=1)
+    ax.set_xticks([r["n_st"] for r in SC.values()])
+    ax.set_xlabel("estações")
+    ax.set_ylabel("redução da demanda perdida vs heurística (%)")
+    ax.yaxis.grid(True, color=GRID, lw=0.6)
+    ax.set_axisbelow(True)
+    ax.legend(frameon=False, loc="lower left")
+    fig.tight_layout()
+    save(fig, "fig_escala", outdir)
+    table_csv(outdir / "dados" / "fig_escala.csv", ["serie", "estacoes", "reducao_pct", "ic95", "n_sementes"], csv_rows)
+
+
 def save(fig, name, outdir):
     for ext in ("pdf", "png"):
         fig.savefig(outdir / f"{name}.{ext}", bbox_inches="tight", facecolor="white")
@@ -393,6 +425,56 @@ def write_tables_and_macros(R, A, S, root, runs):
         rt = S["rt"][name]
         mac[f"sens{nm}RtC"], mac[f"sens{nm}RtCLo"], mac[f"sens{nm}RtCHi"] = pt(rt["mean"], 2), pt(rt["lo"], 2), pt(rt["hi"], 2)
         mac[f"sens{nm}Delta"], mac[f"sens{nm}DeltaLo"], mac[f"sens{nm}DeltaHi"] = pt(rt["delta"], 2), pt(rt["dlo"], 2), pt(rt["dhi"], 2)
+    lat_p = runs / "latency.json"                                                     # P8: latência por decisão (scripts/31_latency.py)
+    if lat_p.exists():
+        lat = json.load(open(lat_p, encoding="utf-8"))
+        for b in BASES:
+            L = LETTER[b]
+            mac[f"latRoll{L}"], mac[f"latNet{L}"] = pt(lat[b]["rollout_ms"] / 1000, 1), pt(lat[b]["net_us"], 0)
+            mac[f"latOrder{L}"] = f"{int(np.floor(np.log10(lat[b]['ratio'])))}"
+    P8 = S["p8"]
+    for b in BASES:                                                                   # P8a: limite clarividente; P8b: orçamento 4x
+        L = LETTER[b]
+        if b in P8["oracle"]:
+            o = P8["oracle"][b]
+            mac[f"clvStay{L}"], mac[f"clvHeur{L}"], mac[f"clvRoll{L}"] = pt(o["stay"]), pt(o["heur"]), pt(o["rollout"])
+            mac[f"clvDqn{L}"], mac[f"clv{L}"] = pt(o["dqn"]), pt(o["clair"])
+            mac[f"clvPct{L}"] = f"{100 * o['clair'] / o['stay']:.0f}"
+            mac[f"fracHeur{L}"], mac[f"fracRoll{L}"], mac[f"fracDqn{L}"] = (f"{100 * o[k]:.0f}" for k in ("frac_heur", "frac_rollout", "frac_dqn"))
+            mac[f"leftDqn{L}"] = f"{100 * (1 - o['frac_dqn']):.0f}"
+            mac[f"leftRoll{L}"] = f"{100 * (1 - o['frac_rollout']):.0f}"
+        if b in P8["budget"]:
+            bd = P8["budget"][b]
+            mac[f"bdgN{L}"], mac[f"bdgDqn{L}"] = str(bd["n"]), pt(bd["dqn_2m"])
+            mac[f"bdgDqnLo{L}"], mac[f"bdgDqnHi{L}"] = pt(bd["dqn_2m_lo"]), pt(bd["dqn_2m_hi"])
+            mac[f"bdgDelta{L}"], mac[f"bdgDeltaLo{L}"], mac[f"bdgDeltaHi{L}"] = pt(bd["delta"], 2), pt(bd["delta_lo"], 2), pt(bd["delta_hi"], 2)
+            mac[f"bdgRoll{L}"] = pt(bd["rollout"])
+            mac[f"bdgVsRoll{L}"], mac[f"bdgVsRollLo{L}"], mac[f"bdgVsRollHi{L}"] = pt(bd["vs_roll"], 2), pt(bd["vs_roll_lo"], 2), pt(bd["vs_roll_hi"], 2)
+            mac[f"bdgGap{L}"] = pt(bd["gap_500k"], 2)
+    SC_LETTER = {"cb4wd": "A", "cb8wd": "B", "cb12wd": "C", "cb20wd": "D", "cb30wd": "E"}
+    for inst, r in P8["scale"].items():                                                 # P9: escala maior (4 -> 30 estações)
+        L = SC_LETTER[inst]
+        mac[f"scStay{L}"], mac[f"scHeur{L}"] = pt(r["stay"]), pt(r["heur"])
+        for tag, nm in (("500k", "Five"), ("2m", "TwoM")):
+            if tag in r:
+                t = r[tag]
+                mac[f"scN{nm}{L}"] = str(t["n"])
+                mac[f"scDqn{nm}{L}"], mac[f"scDqn{nm}Lo{L}"], mac[f"scDqn{nm}Hi{L}"] = pt(t["mean"]), pt(t["lo"]), pt(t["hi"])
+                mac[f"scC{nm}{L}"], mac[f"scC{nm}Lo{L}"], mac[f"scC{nm}Hi{L}"] = pt(t["c1"]), pt(t["c1_lo"]), pt(t["c1_hi"])
+                mac[f"scRed{nm}{L}"] = f"{t['red']:.0f}"
+    for it in P8["p3c"]:                                                                  # P3c: sensibilidade do DQN com 10 sementes
+        if "pending" in it:
+            continue
+        nm = {"cb12wdx0.5": "Kmeio", "cb12we": "Fds"}[it["name"]]
+        mac[f"sens{nm}TenN"] = str(it["n_orig"])
+        mac[f"sens{nm}TenC"], mac[f"sens{nm}TenCLo"], mac[f"sens{nm}TenCHi"] = pt(it["c1_orig"], 2), pt(it["c1_orig_lo"], 2), pt(it["c1_orig_hi"], 2)
+        mac[f"sens{nm}TenRtC"], mac[f"sens{nm}TenRtCLo"], mac[f"sens{nm}TenRtCHi"] = pt(it["c1_rt"], 2), pt(it["c1_rt_lo"], 2), pt(it["c1_rt_hi"], 2)
+        mac[f"sens{nm}TenDelta"], mac[f"sens{nm}TenDeltaLo"], mac[f"sens{nm}TenDeltaHi"] = pt(it["delta"], 2), pt(it["delta_lo"], 2), pt(it["delta_hi"], 2)
+    for b, rs in P8["reseed"].items():                                                    # P8c: reavaliação das 4 melhores configs
+        L = LETTER[b]
+        mac[f"reseedChg{L}"] = "sim" if rs["changed"] else "n\\~ao"
+        if rs.get("n"):
+            mac[f"reseedDiff{L}"], mac[f"reseedDiffLo{L}"], mac[f"reseedDiffHi{L}"] = pt(rs["diff"], 2), pt(rs["lo"], 2), pt(rs["hi"], 2)
     cfgs = {b: (R[b]["rollout"]["h"], R[b]["rollout"]["K"]) for b in BASES}
     same = len(set(cfgs.values())) == 1
     h0, k0 = cfgs["cb4wd"]
@@ -418,6 +500,17 @@ def write_tables_and_macros(R, A, S, root, runs):
                         cells.append(f"{pt(mu)} [{pt(lo)}; {pt(hi)}]")
             f.write(f"{LABEL[m]} & " + " & ".join(cells) + " \\\\\n")
         f.write("\\bottomrule\n\\end{tabular}\n")
+    if P8["oracle"]:
+        with open(tdir / "clarividente.tex", "w", encoding="utf-8") as f:
+            f.write("\\begin{tabular}{lrrrrrrr}\n\\toprule\n"
+                    "Escala & Parada & Heur\\'istica & \\emph{Rollout} & DQN & Clarividente & \\multicolumn{2}{c}{Ganho capturado (\\%)} \\\\\n"
+                    "\\cmidrule(lr){7-8}\n & & & & & & \\emph{Rollout} & DQN \\\\\n\\midrule\n")
+            for b in BASES:
+                if b in P8["oracle"]:
+                    o = P8["oracle"][b]
+                    f.write(f"{NST[b]} est. & {pt(o['stay'])} & {pt(o['heur'])} & {pt(o['rollout'])} & {pt(o['dqn'])} & {pt(o['clair'])} & "
+                            f"{100 * o['frac_rollout']:.0f} & {100 * o['frac_dqn']:.0f} \\\\\n")
+            f.write("\\bottomrule\n\\end{tabular}\n")
     return mac
 
 
@@ -474,7 +567,56 @@ def write_results_md(R, A, S, root):
         for name, rt in S["rt"].items():
             L.append(f"| {rt['label']} | {rt['cfg_id']}{' (= a do P1)' if rt['same'] else ''} | {pt(rt['mean'], 2)} [{pt(rt['lo'], 2)}; {pt(rt['hi'], 2)}] | "
                      + ("—" if rt["same"] else f"{pt(rt['delta'], 2)} [{pt(rt['dlo'], 2)}; {pt(rt['dhi'], 2)}]") + f" | {rt['n']} |")
-    L += ["\n## 6. Limitações a declarar\n",
+    P8 = S.get("p8") or {}
+    if P8.get("oracle") or P8.get("budget") or P8.get("scale"):
+        L += ["\n## 6. Âncoras e robustez da conclusão central (P8; DESVIOS.md 2026-10-18)\n"]
+        if P8.get("oracle"):
+            L += ["### 6.1 Limite clarividente (planejador que conhece a demanda do cenário; 200 primeiros cenários de teste; demanda perdida, menor é melhor)\n",
+                  "| escala | parada | heurística | rollout | DQN | clarividente (limite inferior do ótimo clarividente) | ganho capturado: rollout | DQN | limite ≈ 0? |",
+                  "|---|---|---|---|---|---|---|---|---|"]
+            for b in BASES:
+                if b in P8["oracle"]:
+                    o = P8["oracle"][b]
+                    L.append(f"| {NST[b]} est. | {pt(o['stay'])} | {pt(o['heur'])} | {pt(o['rollout'])} | {pt(o['dqn'])} | {pt(o['clair'])} | "
+                             f"{100 * o['frac_rollout']:.0f}% | {100 * o['frac_dqn']:.0f}% | {'sim (≤ 5% da parada)' if o['near_zero'] else 'não'} |")
+            L += ["\n(O clarividente não é atingível por política que não vê o futuro; com largura finita é limite inferior do ótimo clarividente, logo 'ganho capturado' é "
+                  "limite superior da fração verdadeira. Não se afirma distância ao ótimo não antecipativo.)\n"]
+        if P8.get("budget"):
+            L += ["### 6.2 DQN com 4× o orçamento de treino (2 milhões de passos; config do P1; sem reajuste)\n",
+                  "| escala | n (2 M) | DQN 500 mil | DQN 2 M [IC95%] | redução da demanda perdida com 4× [IC95% Welch] | rollout | DQN(2 M) − rollout [IC95%] |", "|---|---|---|---|---|---|---|"]
+            for b in BASES:
+                if b in P8["budget"]:
+                    bd = P8["budget"][b]
+                    L.append(f"| {NST[b]} est. | {bd['n']} | {pt(bd['dqn_500k'])} | {pt(bd['dqn_2m'])} [{pt(bd['dqn_2m_lo'])}; {pt(bd['dqn_2m_hi'])}] | "
+                             f"{pt(bd['delta'], 2)} [{pt(bd['delta_lo'], 2)}; {pt(bd['delta_hi'], 2)}] | {pt(bd['rollout'])} | "
+                             f"{pt(bd['vs_roll'], 2)} [{pt(bd['vs_roll_lo'], 2)}; {pt(bd['vs_roll_hi'], 2)}] |")
+            L += ["\n(DQN(2 M) − rollout em reward: negativo = o rollout continua melhor.)\n"]
+        if P8.get("scale"):
+            L += ["### 6.0 Escala maior: 20 e 30 estações (P9; DQN com a config de 12 estações, sem reajuste)\n",
+                  "| escala | parada | heurística | DQN 500 mil | redução | DQN 2 M | redução | C1 2 M [IC95%] |", "|---|---|---|---|---|---|---|---|"]
+            for inst, r in P8["scale"].items():
+                c = []
+                for tag in ("500k", "2m"):
+                    t = r.get(tag)
+                    c += [f"{pt(t['mean'])} [{pt(t['lo'])}; {pt(t['hi'])}] (n = {t['n']})", f"{t['red']:.0f}%"] if t else ["(pendente)", ""]
+                t2 = r.get("2m")
+                L.append(f"| {r['n_st']} est. | {pt(r['stay'])} | {pt(r['heur'])} | " + " | ".join(c) + " | "
+                         + (f"{pt(t2['c1'], 1)} [{pt(t2['c1_lo'], 1)}; {pt(t2['c1_hi'], 1)}]" if t2 else "") + " |")
+            L += ["\n(Rollout e clarividente não foram rodados em 20/30 estações; as estações acrescentadas têm volume maior que as 12 legadas.)\n"]
+        if P8.get("p3c"):
+            L += ["### 6.3 Sensibilidade do DQN com 10 sementes (variantes de 12 est. em que a conclusão mudou)\n",
+                  "| variante | n | C1 sem reajuste [IC95%] | C1 reajustado [IC95%] | reajustado − sem reajuste [IC95% Welch] |", "|---|---|---|---|---|"]
+            for it in P8["p3c"]:
+                if "pending" not in it:
+                    L.append(f"| {it['label']} | {it['n_orig']} / {it['n_rt']} | {pt(it['c1_orig'], 2)} [{pt(it['c1_orig_lo'], 2)}; {pt(it['c1_orig_hi'], 2)}] | "
+                             f"{pt(it['c1_rt'], 2)} [{pt(it['c1_rt_lo'], 2)}; {pt(it['c1_rt_hi'], 2)}] | {pt(it['delta'], 2)} [{pt(it['delta_lo'], 2)}; {pt(it['delta_hi'], 2)}] |")
+        if P8.get("reseed"):
+            L += ["\n### 6.4 Reavaliação das 4 melhores configs com 4 sementes de ajuste\n"]
+            for b, rs in P8["reseed"].items():
+                txt = "seleção confirmada" if not rs["changed"] else (f"mudou (nº {rs['p1']} → nº {rs['selected']}); finais de 10 sementes − primário = "
+                                                                      f"{pt(rs['diff'], 2)} [{pt(rs['lo'], 2)}; {pt(rs['hi'], 2)}]" if rs.get("n") else "mudou; finais pendentes")
+                L.append(f"- {NST[b]} est.: {txt}")
+    L += ["\n## 7. Limitações a declarar\n",
           "- Simulador sem roteamento: todo deslocamento custa 1 intervalo; ocupação inicial dos dias reais desconhecida (50% ± 2); "
           "o modelo de Poisson superestima a dificuldade vs dias reais.",
           "- O rollout usa o modelo verdadeiro da demanda; o DQN aprende só de amostras. O melhor rollout estava no limite da grade (h, K).",
@@ -518,6 +660,26 @@ def check_claims(R, A, S):
     we = next(it for it in S["cb12wd"] if it["name"] == "cb12we")
     out.append((k05["hi"] < 0, "sensibilidade 12 est.: DQN significativamente pior com demanda × 0,5"))
     out.append((we["lo"] <= 0 <= we["hi"], "sensibilidade 12 est.: fim de semana sem diferença detectável"))
+    P8 = S["p8"]
+    for b in BASES:
+        if b in P8["oracle"]:
+            o = P8["oracle"][b]
+            out.append((o["clair"] < 0.10 * o["stay"], f"P8a {b}: o clarividente perde menos de 10% da demanda perdida da parada (limite frouxo)"))
+    if {"cb4wd", "cb8wd", "cb12wd"} <= set(P8["budget"]):
+        b4, b8, b12 = (P8["budget"][k] for k in ("cb4wd", "cb8wd", "cb12wd"))
+        out.append((b4["delta_lo"] > 0 and b8["delta_lo"] > 0 and b12["delta_lo"] > 0, "P8b: 4× o orçamento melhora o DQN nas três escalas (IC de Welch exclui 0)"))
+        out.append((b4["vs_roll_lo"] > 0, "P8b 4 est.: com 4× o orçamento o DQN continua melhor que o rollout (IC exclui 0)"))
+        out.append((b8["vs_roll_lo"] <= 0 <= b8["vs_roll_hi"], "P8b 8 est.: com 4× o orçamento o DQN empata com o rollout (IC inclui 0)"))
+        out.append((b12["vs_roll_hi"] < 0, "P8b 12 est.: com 4× o orçamento o rollout continua melhor que o DQN (IC exclui 0)"))
+    for b, rs in P8["reseed"].items():
+        if rs.get("n"):
+            out.append((rs["lo"] <= 0 <= rs["hi"], f"P8c {b}: os finais com a config reavaliada não diferem detectavelmente dos primários"))
+    p3c = {it["name"]: it for it in P8["p3c"] if "pending" not in it}
+    if {"cb12wdx0.5", "cb12we"} <= set(p3c):
+        k, w = p3c["cb12wdx0.5"], p3c["cb12we"]
+        out.append((k["c1_orig_hi"] < 0 and k["c1_rt_hi"] < 0, "P3c (10 sementes): com demanda × 0,5 o DQN segue significativamente pior, com e sem reajuste"))
+        out.append((w["c1_orig_lo"] > 0 and w["c1_rt_lo"] > 0, "P3c (10 sementes): no fim de semana o DQN passa a ser significativamente melhor, com e sem reajuste"))
+        out.append((k["delta_lo"] <= 0 <= k["delta_hi"] and w["delta_lo"] <= 0 <= w["delta_hi"], "P3c: o reajuste não altera detectavelmente o DQN (10 sementes) nas duas variantes"))
     rt = S["rt"]
     out.append((all(rt[n]["lo"] <= 0 <= rt[n]["hi"] for n in ("cb12wdx0.5", "cb12we")),
                 "P3b: com o DQN reajustado, o IC95% de C1 inclui 0 nas duas variantes"))
@@ -535,11 +697,14 @@ def main():
     (outdir / "dados").mkdir(parents=True, exist_ok=True)
     R, A, S = collect(runs), ablation(runs), sensitivity(runs)
     S["rt"] = retuned(runs)
+    S["p8"] = {**AN30.p8_data(runs), "p3c": AN30.p3c_data(runs), "reseed": AN30.reseed_data(runs), "scale": AN30.scale_data(runs)}
     fig_main(R, outdir)
     fig_curves(R, outdir)
     fig_pool(R, outdir)
     fig_ablation(A, outdir)
     fig_sensitivity(S, outdir)
+    if len(S["p8"]["scale"]) >= 4 and any("500k" in r for k, r in S["p8"]["scale"].items() if k in ("cb20wd", "cb30wd")):
+        fig_scale(S["p8"]["scale"], outdir)
     mac = write_tables_and_macros(R, A, S, ROOT, runs)
     for ok, msg in check_claims(R, A, S):
         print(("ok     " if ok else "ALERTA ") + msg)

@@ -161,5 +161,45 @@ class TestReseedAndP3c(unittest.TestCase):
         self.assertAlmostEqual(num(cells[5]), 1.0, delta=0.3)              # C1 reajustado ≈ −9 − (−10)
 
 
+class TestScaleData(unittest.TestCase):
+    """P9: DQN × heurística de 4 a 30 estações; 20/30 vêm de scale_/scale2m_ e das heurísticas em heuristics_scale_<inst>.jsonl."""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._td.name)
+        t = self.tmp
+        inst = "cb20wd"
+        dump(t / f"heuristics_scale_{inst}.jsonl", [
+            {"instance": inst, "method": "stay", "test_mean": -360.0, "real_test_mean": -310.0},
+            {"instance": inst, "method": "greedy_cal", "policy": "g", "val_table": {"c": -280.0}, "test_mean": -278.0, "real_test_mean": -265.0},
+            {"instance": inst, "method": "greedy_cal2", "policy": "g2", "val_table": {"c": -281.0}, "test_mean": -270.0, "real_test_mean": -260.0}])   # melhor em TESTE, não em val
+        rng = np.random.default_rng(2)
+        dump(t / f"scale_{inst}.jsonl", [{"method": "dqn", "seed": s, "test_mean": float(-250 + rng.normal(0, 2)), "real_test_mean": -240.0} for s in range(5)])
+        dump(t / f"scale2m_{inst}.jsonl", [{"method": "dqn", "seed": s, "test_mean": float(-200 + rng.normal(0, 2)), "real_test_mean": -190.0} for s in range(5)])
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def test_reference_is_chosen_by_validation_and_reduction_is_relative_to_it(self):
+        d = P8.scale_data(self.tmp, scales=("cb20wd",))["cb20wd"]
+        self.assertEqual(d["heur_family"], "greedy_cal")
+        self.assertAlmostEqual(d["heur"], 278.0)
+        self.assertAlmostEqual(d["500k"]["red"], 100 * (278 - 250) / 278, delta=1.0)
+        self.assertAlmostEqual(d["2m"]["red"], 100 * (278 - 200) / 278, delta=1.0)
+        self.assertGreater(d["2m"]["c1"], d["500k"]["c1"])                       # C1 em reward: positivo favorece o DQN
+        self.assertTrue(d["500k"]["red_lo"] <= d["500k"]["red"] <= d["500k"]["red_hi"])
+        self.assertNotIn("rollout", d)                                           # não rodado em 20/30
+
+    def test_scales_without_enough_seeds_or_reference_are_skipped(self):
+        dump(self.tmp / "scale2m_cb20wd.jsonl", [{"method": "dqn", "seed": 0, "test_mean": -200.0}])
+        d = P8.scale_data(self.tmp, scales=("cb20wd", "cb30wd"))
+        self.assertNotIn("2m", d["cb20wd"])
+        self.assertNotIn("cb30wd", d)
+
+    def test_section_lists_pending_and_the_no_rollout_note(self):
+        txt = "\n".join(P8.scale_section(self.tmp))
+        self.assertIn("O rollout não foi rodado em 20/30 estações", txt)
+
+
 if __name__ == "__main__":
     unittest.main()

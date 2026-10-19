@@ -192,6 +192,20 @@ def reseed_section(runs, bases=BASES):
           "> Variantes de 12 estações em que a conclusão mudou no P3. Sementes 0–9 do DQN com a config do P1 ('sem reajuste') e com a reajustada no P3b; "
           "referência = heurística recalibrada na variante. C1 = DQN − heurística, por semente, IC95% t. As tabelas de 5 sementes (P3/P3b) continuam sendo as pré-registradas.\n",
           "| variante | n (sem reajuste) | C1 sem reajuste [IC95%] | n (reajustado) | C1 reajustado [IC95%] | reajustado − sem reajuste [IC95% Welch] |", "|---|---|---|---|---|---|"]
+    for it in p3c_data(runs):
+        if "pending" in it:
+            L.append(f"| {it['label']} (`{it['name']}`) | {it['n_orig']} | (pendente) | {it['n_rt']} | | |")
+            continue
+        L.append(f"| {it['label']} (`{it['name']}`) | {it['n_orig']} | {fmt(it['c1_orig'])} [{fmt(it['c1_orig_lo'])}; {fmt(it['c1_orig_hi'])}] | "
+                 f"{it['n_rt']}{' (= sem reajuste)' if it['same'] else ''} | {fmt(it['c1_rt'])} [{fmt(it['c1_rt_lo'])}; {fmt(it['c1_rt_hi'])}] | "
+                 + ("—" if it["same"] else f"{fmt(it['delta'])} [{fmt(it['delta_lo'])}; {fmt(it['delta_hi'])}]") + " |")
+    return L + [""]
+
+
+def p3c_data(runs):
+    """P3c: DQN com até 10 sementes nas variantes de P3B_VARIANTS, com a config do P1 e com a reajustada (mesma heurística recalibrada)."""
+    runs = Path(runs)
+    out = []
     for base, lst in AN.P3B_VARIANTS.items():
         for label, name in lst:
             by, H = AN.p3_data(runs, name, base)
@@ -205,22 +219,153 @@ def reseed_section(runs, bases=BASES):
             rt_src = runs / (f"sens_{name}.jsonl" if same else f"sens_retuned_{name}.jsonl")
             rt = {r["seed"]: r["test_mean"] for r in rows_of(rt_src) if r["method"] == "dqn" and r["seed"] < 10}
             if len(orig) < 2 or len(rt) < 2:
-                L.append(f"| {label} (`{name}`) | {len(orig)} | (pendente) | {len(rt)} | | |")
+                out.append({"label": label, "name": name, "n_orig": len(orig), "n_rt": len(rt), "pending": True})
                 continue
             xo = np.array([v for _, v in sorted(orig.items())])
             xr = np.array([v for _, v in sorted(rt.items())])
             lo_o, hi_o = ci_t(xo - h)
             lo_r, hi_r = ci_t(xr - h)
             dw, (wl, wh), _ = welch(xr, xo)
-            L.append(f"| {label} (`{name}`) | {len(xo)} | {fmt((xo - h).mean())} [{fmt(lo_o)}; {fmt(hi_o)}] | {len(xr)}{' (= sem reajuste)' if same else ''} | "
-                     f"{fmt((xr - h).mean())} [{fmt(lo_r)}; {fmt(hi_r)}] | " + ("—" if same else f"{fmt(dw)} [{fmt(wl)}; {fmt(wh)}]") + " |")
+            out.append({"label": label, "name": name, "same": bool(same), "n_orig": len(xo), "n_rt": len(xr), "heur": h,
+                        "c1_orig": float((xo - h).mean()), "c1_orig_lo": float(lo_o), "c1_orig_hi": float(hi_o),
+                        "c1_rt": float((xr - h).mean()), "c1_rt_lo": float(lo_r), "c1_rt_hi": float(hi_r),
+                        "delta": float(dw), "delta_lo": float(wl), "delta_hi": float(wh)})
+    return out
+
+
+def reseed_data(runs, bases=BASES):
+    """Resultado da reavaliação com 4 sementes por escala: mudou? e, se mudou e há finais, a diferença (reseed − primário, Welch)."""
+    runs = Path(runs)
+    out = {}
+    for inst in bases:
+        p = runs / f"reseed_{inst}_decision.json"
+        if not p.exists():
+            continue
+        d = load_json(p)
+        rec = {"changed": bool(d["changed"]), "p1": d["p1_cfg_id"], "selected": d["selected_cfg_id"]}
+        if d["changed"]:
+            fr = rows_of(runs / f"final_reseed_{inst}.jsonl")
+            prim = [r for r in rows_of(runs / "final_primary.jsonl") if r["instance"] == inst and r["method"] == "dqn"]
+            if len(fr) >= 2 and prim:
+                x2, x1 = np.array([r["test_mean"] for r in fr]), np.array([r["test_mean"] for r in prim])
+                dw, (wl, wh), _ = welch(x2, x1)
+                rec.update({"n": len(x2), "diff": float(dw), "lo": float(wl), "hi": float(wh)})
+        out[inst] = rec
+    return out
+
+
+def p8_data(runs, bases=BASES, n_test=200):
+    """Números do P8 em forma de dicionário (para 25_make_report.py): demanda perdida POSITIVA (= −reward), por escala.
+    'oracle': parada, heurística, rollout, DQN [IC], clarividente (melhor largura e por largura) nos `n_test` primeiros cenários de teste
+    e a fração do ganho até o clarividente; 'budget': DQN 500 mil × 2 M × rollout; só entram escalas com dados suficientes."""
+    runs = Path(runs)
+    out = {"oracle": {}, "budget": {}}
+    for inst in bases:
+        stay, heur, ro = reference_rows(runs, inst)
+        prim = [r for r in rows_of(runs / "final_primary.jsonl") if r["instance"] == inst and r["method"] == "dqn"]
+        best, per_w = oracle_values(runs, inst)
+        if stay is not None and heur is not None and ro is not None and prim and all(("test", k) in best for k in range(n_test)):
+            sl = slice(0, n_test)
+            m_stay, m_heur, m_ro = (float(np.mean(r["test_rewards"][sl])) for r in (stay, heur, ro))
+            dq = np.array([float(np.mean(r["test_rewards"][sl])) for r in prim])
+            V = float(np.mean([best[("test", k)] for k in range(n_test)]))
+            cw = {W: float(np.mean([per_w[W][("test", k)] for k in range(n_test)])) for W in WIDTHS if all(("test", k) in per_w[W] for k in range(n_test))}
+            den = V - m_stay
+            lo, hi = ci_t(dq)
+            out["oracle"][inst] = {"n": n_test, "stay": -m_stay, "heur": -m_heur, "rollout": -m_ro, "dqn": -float(dq.mean()), "clair": -V,
+                                   "clair_w": {W: -v for W, v in cw.items()}, "near_zero": bool(V >= -NEAR_ZERO * abs(m_stay)),
+                                   "frac_heur": (m_heur - m_stay) / den, "frac_rollout": (m_ro - m_stay) / den, "frac_dqn": (float(dq.mean()) - m_stay) / den,
+                                   "frac_dqn_lo": (lo - m_stay) / den, "frac_dqn_hi": (hi - m_stay) / den}
+        b4 = budget_rows(runs, inst)
+        if len(b4) >= 2 and ro is not None and prim:
+            x4 = np.array([r["test_mean"] for _, r in sorted(b4.items())])
+            x1 = np.array([r["test_mean"] for r in prim])
+            dw, (wl, wh), _ = welch(x4, x1)
+            d = x4 - ro["test_mean"]
+            dlo, dhi = ci_t(d)
+            lo4, hi4 = ci_t(x4)
+            out["budget"][inst] = {"n": len(x4), "dqn_500k": -float(x1.mean()), "dqn_2m": -float(x4.mean()), "dqn_2m_lo": -float(hi4), "dqn_2m_hi": -float(lo4),
+                                   "delta": float(dw), "delta_lo": float(wl), "delta_hi": float(wh), "rollout": -float(ro["test_mean"]),
+                                   "vs_roll": float(d.mean()), "vs_roll_lo": float(dlo), "vs_roll_hi": float(dhi),
+                                   "gap_500k": float(x1.mean() - ro["test_mean"])}
+    return out
+
+
+SCALES = ("cb4wd", "cb8wd", "cb12wd", "cb20wd", "cb30wd")
+N_ST = {"cb4wd": 4, "cb8wd": 8, "cb12wd": 12, "cb20wd": 20, "cb30wd": 30}
+
+
+def scale_data(runs, scales=SCALES):
+    """P9 (DESVIOS.md 2026-10-19): DQN × heurística calibrada ao longo da escala (4 → 30 estações), com 500 mil e 2 milhões de passos.
+    Demanda perdida POSITIVA. 4/8/12: 500 mil = 10 sementes do experimento principal; 2 M = budget4x (5 sementes). 20/30: scale_/scale2m_ (5 sementes).
+    Rollout só existe em 4/8/12. Só entram escalas com a referência e ≥ 2 sementes."""
+    runs = Path(runs)
+    out = {}
+    for inst in scales:
+        H = {}
+        for f in list(AN.P4_HEUR_FILES) + sorted(p.name for p in runs.glob(f"heuristics_scale_{inst}.jsonl")):
+            for r in rows_of(runs / f):
+                if r["instance"] == inst:
+                    H[r["method"]] = r
+        fams = {k: v for k, v in H.items() if k in AN.P4_FAMILIES and v.get("val_table")}
+        if not fams or "stay" not in H:
+            continue
+        ref = max(fams, key=lambda k: max(fams[k]["val_table"].values()))
+        h, st = H[ref], H["stay"]
+        if inst in ("cb4wd", "cb8wd", "cb12wd"):
+            s5 = [r for r in rows_of(runs / "final_primary.jsonl") if r["instance"] == inst and r["method"] == "dqn"]
+            s2 = list(budget_rows(runs, inst).values())
+        else:
+            s5 = [r for r in rows_of(runs / f"scale_{inst}.jsonl") if r["method"] == "dqn"]
+            s2 = [r for r in rows_of(runs / f"scale2m_{inst}.jsonl") if r["method"] == "dqn"]
+        rec = {"n_st": N_ST[inst], "stay": -st["test_mean"], "heur": -h["test_mean"], "heur_family": ref,
+               "stay_real": -st.get("real_test_mean", np.nan), "heur_real": -h.get("real_test_mean", np.nan)}
+        for tag, rows in (("500k", s5), ("2m", s2)):
+            if len(rows) < 2:
+                continue
+            x = np.array([r["test_mean"] for r in rows])
+            xr = np.array([r.get("real_test_mean", np.nan) for r in rows])
+            lo, hi = ci_t(x)
+            c1 = x - h["test_mean"]
+            clo, chi = ci_t(c1)
+            rec[tag] = {"n": len(x), "mean": -float(x.mean()), "lo": -float(hi), "hi": -float(lo), "c1": float(c1.mean()), "c1_lo": float(clo), "c1_hi": float(chi),
+                        "red": float(100 * (h["test_mean"] - x.mean()) / h["test_mean"]), "red_stay": float(100 * (st["test_mean"] - x.mean()) / st["test_mean"]),
+                        "red_lo": float(ci_t(100 * (h["test_mean"] - x) / h["test_mean"])[0]), "red_hi": float(ci_t(100 * (h["test_mean"] - x) / h["test_mean"])[1]),
+                        "real": -float(np.nanmean(xr)) if np.isfinite(xr).any() else float("nan")}
+        ro = [r for f in sorted(runs.glob(f"rollout_{inst}*.jsonl")) for r in rows_of(f)]
+        if ro:
+            b = max(ro, key=lambda r: r["val_mean"])
+            rec["rollout"] = {"mean": -b["test_mean"], "red": float(100 * (h["test_mean"] - b["test_mean"]) / h["test_mean"])}
+        out[inst] = rec
+    return out
+
+
+def scale_section(runs):
+    d = scale_data(runs)
+    L = ["## (d) Escala maior: 20 e 30 estações (P9)\n",
+         "> Instâncias `cb20wd` e `cb30wd` (12 legadas + as de maior volume; DESVIOS.md 2026-10-19). DQN com a config do P1 de 12 estações, **sem reajuste**, 5 sementes "
+         "(4/8/12: as 10 sementes do experimento principal para 500 mil passos e as 5 de `budget4x` para 2 milhões). Referência = heurística calibrada em validação. "
+         "Demanda perdida por dia no teste sintético (1000 cenários); C1 = DQN − heurística em reward (positivo favorece o DQN); redução = relativa à heurística. "
+         "O rollout não foi rodado em 20/30 estações. As estações acrescentadas têm volume maior que as 12 legadas: o efeito do tamanho não está isolado.\n",
+         "| escala | parada | heurística | DQN 500 mil [IC95%] | C1 500 mil [IC95%] | redução | DQN 2 M [IC95%] | C1 2 M [IC95%] | redução | rollout (redução) |",
+         "|---|---|---|---|---|---|---|---|---|---|"]
+    for inst, r in d.items():
+        cells = []
+        for tag in ("500k", "2m"):
+            if tag in r:
+                t = r[tag]
+                cells += [f"{fmt(t['mean'])} [{fmt(t['lo'])}; {fmt(t['hi'])}] (n = {t['n']})", f"{fmt(t['c1'])} [{fmt(t['c1_lo'])}; {fmt(t['c1_hi'])}]", f"{t['red']:.0f}%"]
+            else:
+                cells += ["(pendente)", "", ""]
+        ro = f"{fmt(r['rollout']['mean'])} ({r['rollout']['red']:.0f}%)" if "rollout" in r else "não rodado"
+        L.append(f"| {r['n_st']} est. | {fmt(r['stay'])} | {fmt(r['heur'])} | " + " | ".join(cells) + f" | {ro} |")
     return L + [""]
 
 
 def p8_report(runs):
     L = ["# P8 — ancoragem e robustez da conclusão central (gerado por `scripts/30_analyze_p8.py`)\n",
          "> Desenho e leituras fixados em `DESVIOS.md` (2026-10-18), **antes** de rodar. Reward ≤ 0; maior = melhor; unidade de análise = semente de treino.\n"]
-    return L + oracle_section(runs) + budget_section(runs) + reseed_section(runs)
+    return L + oracle_section(runs) + budget_section(runs) + reseed_section(runs) + scale_section(runs)
 
 
 def main():

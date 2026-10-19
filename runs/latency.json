@@ -1,0 +1,27 @@
+{
+ "others_busy_note": "nenhuma execucao do projeto em andamento; CPU compartilhada com outros projetos do usuario",
+ "cb4wd": {
+  "h": 3,
+  "K": 64,
+  "decisions": 32,
+  "rollout_ms": 60.24816875014949,
+  "net_us": 5.577780000021448,
+  "ratio": 10801.460213546934
+ },
+ "cb8wd": {
+  "h": 3,
+  "K": 64,
+  "decisions": 32,
+  "rollout_ms": 226.04575312516317,
+  "net_us": 15.808715000093798,
+  "ratio": 14298.806267544325
+ },
+ "cb12wd": {
+  "h": 3,
+  "K": 64,
+  "decisions": 32,
+  "rollout_ms": 361.42689687517304,
+  "net_us": 11.189629999716999,
+  "ratio": 32300.165142575228
+ }
+}
