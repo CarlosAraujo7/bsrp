@@ -84,7 +84,54 @@
 | K = 0,5 | 14 | -0,37 [-0,81; 0,06] | 0,09 [-0,36; 0,54] | 5 |
 | fim de semana | 14 | 0,97 [-0,05; 2,00] | 0,34 [-0,73; 1,41] | 5 |
 
-## 6. Limitações a declarar
+## 6. Âncoras e robustez da conclusão central (P8; DESVIOS.md 2026-10-18)
+
+### 6.1 Limite clarividente (planejador que conhece a demanda do cenário; 200 primeiros cenários de teste; demanda perdida, menor é melhor)
+
+| escala | parada | heurística | rollout | DQN | clarividente (limite inferior do ótimo clarividente) | ganho capturado: rollout | DQN | limite ≈ 0? |
+|---|---|---|---|---|---|---|---|---|
+| 4 est. | 45,7 | 23,7 | 12,1 | 9,4 | 2,1 | 77% | 83% | sim (≤ 5% da parada) |
+| 8 est. | 90,5 | 52,1 | 26,8 | 29,0 | 2,7 | 73% | 70% | sim (≤ 5% da parada) |
+| 12 est. | 130,1 | 80,2 | 47,6 | 55,4 | 8,9 | 68% | 62% | não |
+
+(O clarividente não é atingível por política que não vê o futuro; com largura finita é limite inferior do ótimo clarividente, logo 'ganho capturado' é limite superior da fração verdadeira. Não se afirma distância ao ótimo não antecipativo.)
+
+### 6.2 DQN com 4× o orçamento de treino (2 milhões de passos; config do P1; sem reajuste)
+
+| escala | n (2 M) | DQN 500 mil | DQN 2 M [IC95%] | redução da demanda perdida com 4× [IC95% Welch] | rollout | DQN(2 M) − rollout [IC95%] |
+|---|---|---|---|---|---|---|
+| 4 est. | 5 | 9,8 | 9,3 [9,1; 9,5] | 0,49 [0,07; 0,92] | 11,8 | 2,55 [2,35; 2,76] |
+| 8 est. | 5 | 29,7 | 27,5 [26,3; 28,8] | 2,15 [0,89; 3,41] | 27,1 | -0,46 [-1,72; 0,80] |
+| 12 est. | 5 | 55,9 | 52,0 [50,0; 54,1] | 3,90 [1,82; 5,98] | 48,1 | -3,95 [-5,98; -1,91] |
+
+(DQN(2 M) − rollout em reward: negativo = o rollout continua melhor.)
+
+### 6.0 Escala maior: 20 e 30 estações (P9; DQN com a config de 12 estações, sem reajuste)
+
+| escala | parada | heurística | DQN 500 mil | redução | DQN 2 M | redução | C1 2 M [IC95%] |
+|---|---|---|---|---|---|---|---|
+| 4 est. | 46,9 | 24,5 | 9,8 [9,4; 10,2] (n = 10) | 60% | 9,3 [9,1; 9,5] (n = 5) | 62% | 15,2 [15,0; 15,4] |
+| 8 est. | 89,8 | 52,8 | 29,7 [29,0; 30,3] (n = 10) | 44% | 27,5 [26,3; 28,8] (n = 5) | 48% | 25,3 [24,0; 26,5] |
+| 12 est. | 131,3 | 80,5 | 55,9 [54,7; 57,1] (n = 10) | 30% | 52,0 [50,0; 54,1] (n = 5) | 35% | 28,4 [26,4; 30,4] |
+| 20 est. | 359,8 | 277,3 | 219,1 [214,9; 223,2] (n = 5) | 21% | 206,1 [203,8; 208,5] (n = 5) | 26% | 71,1 [68,8; 73,5] |
+| 30 est. | 466,8 | 378,5 | 338,5 [334,9; 342,0] (n = 5) | 11% | 317,3 [311,4; 323,3] (n = 5) | 16% | 61,2 [55,3; 67,1] |
+
+(Rollout e clarividente não foram rodados em 20/30 estações; as estações acrescentadas têm volume maior que as 12 legadas.)
+
+### 6.3 Sensibilidade do DQN com 10 sementes (variantes de 12 est. em que a conclusão mudou)
+
+| variante | n | C1 sem reajuste [IC95%] | C1 reajustado [IC95%] | reajustado − sem reajuste [IC95% Welch] |
+|---|---|---|---|---|
+| K = 0,5 | 10 / 10 | -0,47 [-0,76; -0,19] | -0,51 [-0,82; -0,21] | -0,04 [-0,43; 0,35] |
+| fim de semana | 10 / 10 | 0,91 [0,49; 1,33] | 1,04 [0,30; 1,78] | 0,13 [-0,68; 0,94] |
+
+### 6.4 Reavaliação das 4 melhores configs com 4 sementes de ajuste
+
+- 4 est.: mudou (nº 11 → nº 13); finais de 10 sementes − primário = -0,45 [-0,97; 0,07]
+- 8 est.: seleção confirmada
+- 12 est.: seleção confirmada
+
+## 7. Limitações a declarar
 
 - Simulador sem roteamento: todo deslocamento custa 1 intervalo; ocupação inicial dos dias reais desconhecida (50% ± 2); o modelo de Poisson superestima a dificuldade vs dias reais.
 - O rollout usa o modelo verdadeiro da demanda; o DQN aprende só de amostras. O melhor rollout estava no limite da grade (h, K).

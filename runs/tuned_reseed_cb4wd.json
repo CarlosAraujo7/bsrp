@@ -1,0 +1,23 @@
+{
+ "dqn": {
+  "cfg_id": 13,
+  "cfg": {
+   "lr": 0.0004547242999365407,
+   "target_sync": 4000,
+   "train_every": 1,
+   "batch": 256,
+   "buffer": 100000,
+   "eps_decay_frac": 0.9
+  },
+  "val_mean": -8.14875,
+  "n_configs": 4,
+  "seeds": [
+   1000,
+   1001,
+   1002,
+   1003
+  ],
+  "budget": 200000,
+  "space": "reseed"
+ }
+}

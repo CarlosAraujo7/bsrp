@@ -1,0 +1,77 @@
+# P8 — ancoragem e robustez da conclusão central (gerado por `scripts/30_analyze_p8.py`)
+
+> Desenho e leituras fixados em `DESVIOS.md` (2026-10-18), **antes** de rodar. Reward ≤ 0; maior = melhor; unidade de análise = semente de treino.
+
+## (a) Limite clarividente (P8a)
+
+> Planejador que **conhece a demanda inteira do cenário** (busca em feixe sobre as ações do simulador; `bsrp/oracle.py`). Seu valor é um limite **inferior** do ótimo clarividente; este, por sua vez, **não é atingível** por política que não vê o futuro. 'Ganho capturado' = (método − parada) / (clarividente − parada): contra um limite inferior do clarividente, é um limite **superior** da fração verdadeira. Reward de teste nos primeiros cenários sintéticos e nos 24 dias reais; maior = melhor.
+
+
+### cb4wd
+
+| conjunto | n cen. | parada | heurística | rollout | DQN [IC95%] | clarividente (W = 300) | (W = 1000) | clarividente (melhor) | ganho capturado: heurística | rollout | DQN | clarividente ≥ −5% de parada? |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| teste sintético | 200 | -45,70 | -23,73 | -12,09 | -9,44 [-9,83; -9,04] | -2,35 | -2,08 | -2,08 | 50% | 77% | 83% [82; 84] | sim: limite ≈ nenhuma demanda perdida |
+| dias reais | 24 | -32,67 | -25,42 | -10,88 | -9,06 [-10,17; -7,96] | -1,46 | -1,42 | -1,42 | 23% | 70% | 76% [72; 79] | sim: limite ≈ nenhuma demanda perdida |
+
+### cb8wd
+
+| conjunto | n cen. | parada | heurística | rollout | DQN [IC95%] | clarividente (W = 300) | (W = 1000) | clarividente (melhor) | ganho capturado: heurística | rollout | DQN | clarividente ≥ −5% de parada? |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| teste sintético | 200 | -90,50 | -52,07 | -26,80 | -29,04 [-29,68; -28,39] | -3,29 | -2,73 | -2,69 | 44% | 73% | 70% [69; 71] | sim: limite ≈ nenhuma demanda perdida |
+| dias reais | 24 | -54,04 | -47,54 | -20,17 | -19,69 [-21,21; -18,18] | -2,21 | -1,79 | -1,79 | 12% | 65% | 66% [63; 69] | sim: limite ≈ nenhuma demanda perdida |
+
+### cb12wd
+
+| conjunto | n cen. | parada | heurística | rollout | DQN [IC95%] | clarividente (W = 300) | (W = 1000) | clarividente (melhor) | ganho capturado: heurística | rollout | DQN | clarividente ≥ −5% de parada? |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| teste sintético | 200 | -130,07 | -80,19 | -47,60 | -55,35 [-56,81; -53,90] | -10,65 | -9,21 | -8,91 | 41% | 68% | 62% [60; 63] | não |
+| dias reais | 24 | -84,54 | -67,83 | -42,08 | -41,25 [-42,78; -39,71] | -14,00 | -12,83 | -12,83 | 23% | 59% | 60% [58; 63] | não |
+
+**Leitura (fixada antes de ver os dados):** onde o clarividente chega a ≥ −5% do valor de 'parar', o limite é praticamente 'nenhuma demanda perdida' e **não** se afirma distância ao ótimo não antecipativo; a coluna 'ganho capturado' vira apenas a redução relativa à parada. A largura 1000 melhorando a 300 indica que o feixe ainda não convergiu (o valor é limite inferior do clarividente).
+
+## (b) DQN com 4× o orçamento de treino (P8b)
+
+> Config do P1 de cada escala, **2 milhões de passos** (o ε-decay estica junto; sem reajuste), sementes 0–4. 'Δ orçamento' = DQN(2 M) − DQN(500 mil), Welch (execuções independentes; as 10 sementes de 500 mil passos). 'DQN(2 M) − rollout' = por semente contra o rollout de cabeçalho (constante), IC95% t. Reward de teste; maior = melhor.
+
+| escala | n (2 M) | DQN 500 mil [IC95%] | DQN 2 M [IC95%] | Δ orçamento [IC95% Welch] | rollout | DQN(2 M) − rollout [IC95%] | leitura (regra pré-fixada) |
+|---|---|---|---|---|---|---|---|
+| cb4wd | 5 | -9,77 [-10,18; -9,37] | -9,28 [-9,49; -9,07] | 0,49 [0,07; 0,92] | -11,83 | 2,55 [2,35; 2,76] | o orçamento de 500 mil passos limita o DQN; DQN(2 M) supera o rollout |
+| cb8wd | 5 | -29,69 [-30,34; -29,03] | -27,54 [-28,79; -26,28] | 2,15 [0,89; 3,41] | -27,08 | -0,46 [-1,72; 0,80] | o orçamento de 500 mil passos limita o DQN; sem diferença detectável com o rollout |
+| cb12wd | 5 | -55,94 [-57,14; -54,74] | -52,04 [-54,08; -50,01] | 3,90 [1,82; 5,98] | -48,10 | -3,95 [-5,98; -1,91] | o orçamento de 500 mil passos limita o DQN; o rollout continua melhor |
+
+## (c1) Reavaliação das 4 melhores configs do DQN com 4 sementes de ajuste (P8c)
+
+> As 4 configs de maior val médio (sementes 1000, 1001) recebem as sementes 1002 e 1003; escolha pela média das 4. Se a escolhida difere da do P1, rodam-se 10 sementes × 500 mil passos com ela e o resultado é reportado ao lado do primário (Welch).
+
+| escala | cfg do P1 | médias (4 sementes) das 4 configs | escolhida | resultado |
+|---|---|---|---|---|
+| cb4wd | nº 11 | nº 13: -8,15, nº 11: -8,19, nº 14: -8,46, nº 12: -8,63 | nº 13 | mudou; finais (n = 10): -10,22 × primário -9,77; diferença -0,45 [-0,97; 0,07] |
+| cb8wd | nº 9 | nº 9: -33,89, nº 15: -36,92, nº 8: -37,03, nº 14: -37,65 | nº 9 | seleção confirmada |
+| cb12wd | nº 9 | nº 9: -69,80, nº 13: -73,13, nº 15: -73,24, nº 14: -80,64 | nº 9 | seleção confirmada |
+
+## (c2) Sensibilidade do DQN com 10 sementes (P3c)
+
+> Variantes de 12 estações em que a conclusão mudou no P3. Sementes 0–9 do DQN com a config do P1 ('sem reajuste') e com a reajustada no P3b; referência = heurística recalibrada na variante. C1 = DQN − heurística, por semente, IC95% t. As tabelas de 5 sementes (P3/P3b) continuam sendo as pré-registradas.
+
+| variante | n (sem reajuste) | C1 sem reajuste [IC95%] | n (reajustado) | C1 reajustado [IC95%] | reajustado − sem reajuste [IC95% Welch] |
+|---|---|---|---|---|---|
+| K = 0,5 (`cb12wdx0.5`) | 10 | -0,47 [-0,76; -0,19] | 10 | -0,51 [-0,82; -0,21] | -0,04 [-0,43; 0,35] |
+| fim de semana (`cb12we`) | 10 | 0,91 [0,49; 1,33] | 10 | 1,04 [0,30; 1,78] | 0,13 [-0,68; 0,94] |
+
+## (d) Escala maior: 20 e 30 estações (P9)
+
+> Instâncias `cb20wd` e `cb30wd` (12 legadas + as de maior volume; DESVIOS.md 2026-10-19). DQN com a config do P1 de 12 estações, **sem reajuste**, 5 sementes (4/8/12: as 10 sementes do experimento principal para 500 mil passos e as 5 de `budget4x` para 2 milhões). Referência = heurística calibrada em validação. Demanda perdida por dia no teste sintético (1000 cenários); C1 = DQN − heurística em reward (positivo favorece o DQN); redução = relativa à heurística. O rollout não foi rodado em 20/30 estações. As estações acrescentadas têm volume maior que as 12 legadas: o efeito do tamanho não está isolado.
+
+| escala | parada | heurística | DQN 500 mil [IC95%] | C1 500 mil [IC95%] | redução | DQN 2 M [IC95%] | C1 2 M [IC95%] | redução | rollout (redução) |
+|---|---|---|---|---|---|---|---|---|---|
+| 4 est. | 46,94 | 24,46 | 9,77 [9,37; 10,18] (n = 10) | 14,69 [14,28; 15,10] | 60% | 9,28 [9,07; 9,49] (n = 5) | 15,18 [14,97; 15,39] | 62% | 11,83 (52%) |
+| 8 est. | 89,77 | 52,79 | 29,69 [29,03; 30,34] (n = 10) | 23,10 [22,45; 23,76] | 44% | 27,54 [26,28; 28,79] (n = 5) | 25,25 [24,00; 26,51] | 48% | 27,08 (49%) |
+| 12 est. | 131,34 | 80,45 | 55,94 [54,74; 57,14] (n = 10) | 24,51 [23,31; 25,71] | 30% | 52,04 [50,01; 54,08] (n = 5) | 28,41 [26,37; 30,45] | 35% | 48,10 (40%) |
+| 20 est. | 359,83 | 277,27 | 219,09 [214,95; 223,23] (n = 5) | 58,18 [54,04; 62,32] | 21% | 206,14 [203,81; 208,47] (n = 5) | 71,13 [68,80; 73,46] | 26% | não rodado |
+| 30 est. | 466,81 | 378,52 | 338,45 [334,87; 342,03] (n = 5) | 40,07 [36,49; 43,65] | 11% | 317,32 [311,38; 323,26] (n = 5) | 61,21 [55,27; 67,15] | 16% | não rodado |
+### (d2) DQN reajustado em 30 estações (P9b)
+
+A reavaliação do pool de 16 configs escolheu a mesma config do P1 de 12 estações (nº 9; val -372,37 contra -376,41 da segunda melhor): seleção confirmada; o resultado é o de 500 mil passos acima. Leitura pré-fixada: a configuração herdada de 12 estações não explica a queda da vantagem (dentro deste espaço de busca).
+
+

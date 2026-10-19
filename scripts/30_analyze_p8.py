@@ -340,6 +340,34 @@ def scale_data(runs, scales=SCALES):
     return out
 
 
+def scale_retuned_data(runs, inst="cb30wd"):
+    """P9b (DESVIOS.md 2026-10-19): DQN reajustado em `inst` (pool de 16, escolha por val) × DQN com a config de 12 estações, 500 mil passos, 5 sementes.
+    Se a escolhida for a mesma config do P1 de 12 estações, não há finais (resultado = scale_<inst>.jsonl). None se ainda não há dados."""
+    runs = Path(runs)
+    p_t, p12 = runs / f"tuned_ext_{inst}.json", runs / "tuned_ext_cb12wd.json"
+    sd = scale_data(runs, scales=(inst,)).get(inst)
+    if not (p_t.exists() and p12.exists() and sd and "500k" in sd):
+        return None
+    t, base_id = load_json(p_t)["dqn"], load_json(p12)["dqn"]["cfg_id"]
+    same = t["cfg_id"] == base_id
+    base = np.array([r["test_mean"] for r in rows_of(runs / f"scale_{inst}.jsonl") if r["method"] == "dqn"])
+    rt_rows = rows_of(runs / ("scale_" + inst + ".jsonl" if same else f"scale_retuned_{inst}.jsonl"))
+    x = np.array([r["test_mean"] for r in rt_rows if r["method"] == "dqn"])
+    pool = AN.pool_stats(rows_of(runs / f"tune_{inst}.jsonl"), "dqn") if (runs / f"tune_{inst}.jsonl").exists() else {}
+    rec = {"cfg_id": int(t["cfg_id"]), "same": bool(same), "val_mean": float(t["val_mean"]), "val_base": float(pool[base_id][1]) if base_id in pool else float("nan"),
+           "n_configs": int(t["n_configs"]), "limits": AN.border_flags(t["cfg"], pool) if pool else [], "cfg": t["cfg"],
+           "val_second": float(sorted([v[1] for v in pool.values()], reverse=True)[1]) if len(pool) > 1 else float("nan")}
+    if len(x) >= 2:
+        h = -sd["heur"]
+        dw, (wl, wh), _ = welch(x, base)
+        lo, hi = ci_t(x)
+        c1 = x - h
+        clo, chi = ci_t(c1)
+        rec.update({"n": len(x), "mean": -float(x.mean()), "lo": -float(hi), "hi": -float(lo), "delta": float(dw), "delta_lo": float(wl), "delta_hi": float(wh),
+                    "c1": float(c1.mean()), "c1_lo": float(clo), "c1_hi": float(chi), "red": float(100 * (h - x.mean()) / h)})
+    return rec
+
+
 def scale_section(runs):
     d = scale_data(runs)
     L = ["## (d) Escala maior: 20 e 30 estações (P9)\n",
@@ -359,6 +387,21 @@ def scale_section(runs):
                 cells += ["(pendente)", "", ""]
         ro = f"{fmt(r['rollout']['mean'])} ({r['rollout']['red']:.0f}%)" if "rollout" in r else "não rodado"
         L.append(f"| {r['n_st']} est. | {fmt(r['stay'])} | {fmt(r['heur'])} | " + " | ".join(cells) + f" | {ro} |")
+    rt = scale_retuned_data(runs)
+    if rt is not None:
+        L += ["### (d2) DQN reajustado em 30 estações (P9b)\n"]
+        if rt["same"]:
+            L += [f"A reavaliação do pool de {rt['n_configs']} configs escolheu a mesma config do P1 de 12 estações (nº {rt['cfg_id']}; val {fmt(rt['val_mean'])} contra {fmt(rt['val_second'])} da segunda melhor): "
+                  "seleção confirmada; o resultado é o de 500 mil passos acima. Leitura pré-fixada: a configuração herdada de 12 estações não explica a queda da vantagem (dentro deste espaço de busca).\n"]
+        elif "n" in rt:
+            c = rt["cfg"]
+            L += [f"Config escolhida (nº {rt['cfg_id']}): lr {c['lr']:.2e}, sync {c['target_sync']}, every {c['train_every']}, batch {c['batch']}, buffer {c['buffer']}, ε-decay {c['eps_decay_frac']}; "
+                  f"val {fmt(rt['val_mean'])} (a da config de 12 estações: {fmt(rt['val_base'])}); limites do pool: {', '.join(rt['limits']) or 'nenhum'}.\n",
+                  "| DQN reajustado (500 mil passos) [IC95%] | n | reajustado − sem reajuste [IC95% Welch] | C1 reajustado [IC95%] | redução vs heurística |", "|---|---|---|---|---|",
+                  f"| {fmt(rt['mean'])} [{fmt(rt['lo'])}; {fmt(rt['hi'])}] | {rt['n']} | {fmt(rt['delta'])} [{fmt(rt['delta_lo'])}; {fmt(rt['delta_hi'])}] | "
+                  f"{fmt(rt['c1'])} [{fmt(rt['c1_lo'])}; {fmt(rt['c1_hi'])}] | {rt['red']:.0f}% |", ""]
+        else:
+            L += ["Reajuste escolhido; finais pendentes.\n"]
     return L + [""]
 
 

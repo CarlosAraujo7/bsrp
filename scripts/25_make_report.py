@@ -171,7 +171,7 @@ def retuned(runs: Path) -> dict:
 # ──────────────────────────────────────────────────────────────────────────────
 # FIGURAS
 # ──────────────────────────────────────────────────────────────────────────────
-def fig_scale(SC, outdir):
+def fig_scale(SC, outdir, RT=None):
     """P9: redução da demanda perdida em relação à heurística calibrada, de 4 a 30 estações (DQN 500 mil e 2 milhões de passos; rollout só até 12)."""
     fig, ax = plt.subplots(figsize=(5.4, 3.2))
     csv_rows = []
@@ -184,6 +184,9 @@ def fig_scale(SC, outdir):
         ax.fill_between(xs, [t["red_lo"] for _, t in pts], [t["red_hi"] for _, t in pts], color=COL["dqn"], alpha=0.12, lw=0)
         ax.plot(xs, ys, ls, color=COL["dqn"], lw=1.6, marker="o", ms=5, mfc=COL["dqn"] if filled else "white", mec=COL["dqn"], label=label, zorder=3)
         csv_rows += [[tag, n, f"{t['red']:.1f}", f"{t['red_lo']:.1f}..{t['red_hi']:.1f}", t["n"]] for n, t in pts]
+    if RT and "n" in RT and not RT["same"]:
+        ax.scatter([30], [RT["red"]], marker="D", s=34, color=COL["dqn"], edgecolor=INK, lw=0.8, zorder=4, label="DQN reajustado em 30 est. (500 mil)")
+        csv_rows.append(["reajustado_30", 30, f"{RT['red']:.1f}", "", RT["n"]])
     ro = [(r["n_st"], r["rollout"]["red"]) for r in SC.values() if "rollout" in r]
     if ro:
         ax.plot([n for n, _ in ro], [v for _, v in ro], "-", color=COL["rollout"], lw=1.6, marker="s", ms=4.5, label="Rollout (modelo)", zorder=3)
@@ -430,7 +433,7 @@ def write_tables_and_macros(R, A, S, root, runs):
         lat = json.load(open(lat_p, encoding="utf-8"))
         for b in BASES:
             L = LETTER[b]
-            mac[f"latRoll{L}"], mac[f"latNet{L}"] = pt(lat[b]["rollout_ms"] / 1000, 1), pt(lat[b]["net_us"], 0)
+            mac[f"latRoll{L}"], mac[f"latNet{L}"] = pt(lat[b]["rollout_ms"], 0), pt(lat[b]["net_us"], 0)
             mac[f"latOrder{L}"] = f"{int(np.floor(np.log10(lat[b]['ratio'])))}"
     P8 = S["p8"]
     for b in BASES:                                                                   # P8a: limite clarividente; P8b: orçamento 4x
@@ -462,6 +465,15 @@ def write_tables_and_macros(R, A, S, root, runs):
                 mac[f"scDqn{nm}{L}"], mac[f"scDqn{nm}Lo{L}"], mac[f"scDqn{nm}Hi{L}"] = pt(t["mean"]), pt(t["lo"]), pt(t["hi"])
                 mac[f"scC{nm}{L}"], mac[f"scC{nm}Lo{L}"], mac[f"scC{nm}Hi{L}"] = pt(t["c1"]), pt(t["c1_lo"]), pt(t["c1_hi"])
                 mac[f"scRed{nm}{L}"] = f"{t['red']:.0f}"
+    rt30 = P8.get("scale_rt")
+    if rt30 and "n" in rt30:                                                              # P9b: DQN reajustado em 30 estações
+        mac["scRtCfg"], mac["scRtSame"] = str(rt30["cfg_id"]), "sim" if rt30["same"] else "n\\~ao"
+        mac["scRtVal"], mac["scRtValSecond"], mac["scRtNConf"] = pt(-rt30["val_mean"]), pt(-rt30["val_second"]), str(rt30["n_configs"])
+        mac["scRtN"], mac["scRtDqn"], mac["scRtDqnLo"], mac["scRtDqnHi"] = str(rt30["n"]), pt(rt30["mean"]), pt(rt30["lo"]), pt(rt30["hi"])
+        mac["scRtDelta"], mac["scRtDeltaLo"], mac["scRtDeltaHi"] = pt(rt30["delta"]), pt(rt30["delta_lo"]), pt(rt30["delta_hi"])
+        mac["scRtC"], mac["scRtCLo"], mac["scRtCHi"], mac["scRtRed"] = pt(rt30["c1"]), pt(rt30["c1_lo"]), pt(rt30["c1_hi"]), f"{rt30['red']:.0f}"
+    for inst, r in P8["scale"].items():
+        mac[f"scHeurPct{SC_LETTER[inst]}"] = f"{100 * (r['stay'] - r['heur']) / r['stay']:.0f}"
     for it in P8["p3c"]:                                                                  # P3c: sensibilidade do DQN com 10 sementes
         if "pending" in it:
             continue
@@ -674,6 +686,16 @@ def check_claims(R, A, S):
     for b, rs in P8["reseed"].items():
         if rs.get("n"):
             out.append((rs["lo"] <= 0 <= rs["hi"], f"P8c {b}: os finais com a config reavaliada não diferem detectavelmente dos primários"))
+    sc = P8["scale"]
+    if P8.get("scale_rt"):
+        out.append((P8["scale_rt"]["same"], "P9b: em 30 estações o pool de 16 configs escolhe a mesma config de 12 estações (seleção confirmada)"))
+    if {"cb4wd", "cb8wd", "cb12wd", "cb20wd", "cb30wd"} <= set(sc) and all("500k" in sc[k] and "2m" in sc[k] for k in sc):
+        order = ("cb4wd", "cb8wd", "cb12wd", "cb20wd", "cb30wd")
+        for tag, nm in (("500k", "500 mil"), ("2m", "2 milhões")):
+            reds = [sc[k][tag]["red"] for k in order]
+            out.append((all(a > b for a, b in zip(reds, reds[1:])), f"P9: a redução relativa do DQN ({nm} de passos) vs heurística diminui monotonicamente de 4 a 30 estações"))
+        out.append((all(sc[k][tag]["c1_lo"] > 0 for k in ("cb20wd", "cb30wd") for tag in ("500k", "2m")),
+                    "P9: o DQN supera a heurística calibrada em 20 e 30 estações (IC de C1 exclui 0), com 500 mil e 2 milhões de passos"))
     p3c = {it["name"]: it for it in P8["p3c"] if "pending" not in it}
     if {"cb12wdx0.5", "cb12we"} <= set(p3c):
         k, w = p3c["cb12wdx0.5"], p3c["cb12we"]
@@ -697,14 +719,14 @@ def main():
     (outdir / "dados").mkdir(parents=True, exist_ok=True)
     R, A, S = collect(runs), ablation(runs), sensitivity(runs)
     S["rt"] = retuned(runs)
-    S["p8"] = {**AN30.p8_data(runs), "p3c": AN30.p3c_data(runs), "reseed": AN30.reseed_data(runs), "scale": AN30.scale_data(runs)}
+    S["p8"] = {**AN30.p8_data(runs), "p3c": AN30.p3c_data(runs), "reseed": AN30.reseed_data(runs), "scale": AN30.scale_data(runs), "scale_rt": AN30.scale_retuned_data(runs)}
     fig_main(R, outdir)
     fig_curves(R, outdir)
     fig_pool(R, outdir)
     fig_ablation(A, outdir)
     fig_sensitivity(S, outdir)
     if len(S["p8"]["scale"]) >= 4 and any("500k" in r for k, r in S["p8"]["scale"].items() if k in ("cb20wd", "cb30wd")):
-        fig_scale(S["p8"]["scale"], outdir)
+        fig_scale(S["p8"]["scale"], outdir, S["p8"].get("scale_rt"))
     mac = write_tables_and_macros(R, A, S, ROOT, runs)
     for ok, msg in check_claims(R, A, S):
         print(("ok     " if ok else "ALERTA ") + msg)
