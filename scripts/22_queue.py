@@ -18,6 +18,8 @@
   sementes mudou a escolha do P1) → `runs/final_reseed_<inst>.jsonl`.
 * `scale` (P9): DQN com a config de 12 est. do P1 (sem reajuste) em `cb20wd`/`cb30wd`, 5 sementes, 500 mil (`runs/scale_<inst>.jsonl`) e 2 milhões de passos
   (`runs/scale2m_<inst>.jsonl`); entra a instância cujos cenários já existem em scenarios/.
+* `arch` (P10): DQN com rede 128-128 e 256-256 (config nº 9 do P1 + `hidden`; `runs/tuned_arch_<h128|h256>.json`), 500 mil passos, 5 sementes, em `cb30wd` e `cb12wd`
+  (`runs/arch_<tag>_<inst>.jsonl`).
 * Os reruns finais só entram para métodos cuja config escolhida em validação difere da original (regra do DESVIOS.md).
 
   python scripts/22_queue.py --kinds finals ablation --workers 4
@@ -55,7 +57,9 @@ BUDGET4X, B4X_SEEDS = 2_000_000, tuple(range(5))   # P8b (DESVIOS.md 2026-10-18)
 SEO_VARIANTS = ("published", "gamma1")        # P4b (DESVIOS.md 2026-10-14): A2C adaptado de Seo et al. (2022); 10 sementes
 SCALE_INSTANCES, SCALE_SEEDS = ("cb20wd", "cb30wd"), tuple(range(5))   # P9 (DESVIOS.md 2026-10-19): DQN com a config de 12 est. em 20 e 30 estações
 SCALE_BUDGETS = (("scale", 500_000), ("scale2m", 2_000_000))
-KIND_RANK = {"finals": 0, "sens": 1, "sensrt": 2, "reseedfinals": 3, "budget4x": 4, "scale": 5, "sensx": 6, "seo": 7, "ablation": 8}
+ARCH_INSTANCES, ARCH_SEEDS = ("cb30wd", "cb12wd"), tuple(range(5))   # P10 (DESVIOS.md 2026-10-20): DQN com rede mais larga, 500 mil passos
+ARCH_WIDTHS = {"h128": 1.8, "h256": 3.4}                                # custo relativo aproximado vs 64-64 (medido em 30 est.)
+KIND_RANK = {"finals": 0, "sens": 1, "sensrt": 2, "reseedfinals": 3, "budget4x": 4, "scale": 5, "arch": 6, "sensx": 7, "seo": 8, "ablation": 9}
 
 
 @dataclass
@@ -200,6 +204,8 @@ def build_jobs(root, insts=INSTANCES, kinds=("finals", "ablation")):
                         jobs.append(Job((inst, "ablation", v, s), "ablation", base * (0.6 if v in ("noreplay", "vanilla") else 1.0), cmd, tmp, target))
     if "scale" in kinds:
         jobs += scale_jobs(root)
+    if "arch" in kinds:
+        jobs += arch_jobs(root)
     return jobs
 
 
@@ -226,6 +232,32 @@ def scale_jobs(root):
                            "--seeds", str(s), "--budget", str(budget), "--eval-every", str(budget // 10), "--tuned",
                            "--tuned-file", str(p_e), "--out", str(tmp)]
                     jobs.append(Job((inst, "scale", f"dqn_{tag}", s), "scale", est_cost("dqn", cfg) * (budget / BUDGET) * (n / 12), cmd, tmp, target))
+    return jobs
+
+
+def arch_jobs(root):
+    """P10: DQN com `hidden` = 128-128 / 256-256 (config nº 9 do P1 + hidden: runs/tuned_arch_<tag>.json), 500 mil passos, 5 sementes, em cb30wd e cb12wd.
+    Só entra a instância cujos cenários val/test já existem em scenarios/."""
+    root = Path(root)
+    qdir, py, jobs = root / "runs" / "_q", sys.executable, []
+    for inst in ARCH_INSTANCES:
+        if not all((root / "scenarios" / f"{k}_{inst}.npz").exists() for k in ("val", "test")):
+            continue
+        n = int("".join(ch for ch in inst if ch.isdigit()))
+        for tag, mult in ARCH_WIDTHS.items():
+            p_cfg = root / "runs" / f"tuned_arch_{tag}.json"
+            if not p_cfg.exists():
+                continue
+            cfg = load_json(p_cfg)["dqn"]["cfg"]
+            target = root / "runs" / f"arch_{tag}_{inst}.jsonl"
+            done = {r["seed"] for r in read_rows(target)}
+            for s in ARCH_SEEDS:
+                if s not in done:
+                    tmp = qdir / f"{inst}_arch_{tag}_{s}.jsonl"
+                    cmd = [py, "-I", str(root / "scripts" / "13_run_protocol.py"), "learners", "--instances", inst, "--methods", "dqn",
+                           "--seeds", str(s), "--budget", str(BUDGET), "--eval-every", str(EVAL_EVERY), "--tuned", "--tuned-file", str(p_cfg), "--out", str(tmp)]
+                    cost = est_cost("dqn", {k: v for k, v in cfg.items() if k != "hidden"}) * mult * (n / 12 if n > 12 else 1.0)
+                    jobs.append(Job((inst, "arch", f"dqn_{tag}", s), "arch", cost, cmd, tmp, target))
     return jobs
 
 
@@ -302,7 +334,7 @@ def pid_alive(pid):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--kinds", nargs="+", default=["finals", "ablation"], choices=["finals", "sens", "sensrt", "sensx", "budget4x", "reseedfinals", "scale", "seo", "ablation"])
+    ap.add_argument("--kinds", nargs="+", default=["finals", "ablation"], choices=["finals", "sens", "sensrt", "sensx", "budget4x", "reseedfinals", "scale", "arch", "seo", "ablation"])
     ap.add_argument("--instances", nargs="+", default=list(INSTANCES))
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--poll", type=float, default=20.0)
@@ -313,7 +345,7 @@ def main():
     if lock.exists() and pid_alive(int(lock.read_text().strip() or 0)):
         raise SystemExit(f"já há uma fila em execução (PID {lock.read_text().strip()})")
     lock.write_text(str(os.getpid()))
-    required = {"finals": METHODS, "sens": SENS_METHODS, "sensrt": (), "sensx": (), "budget4x": ("dqn",), "reseedfinals": (), "scale": (), "seo": (), "ablation": ("dqn",)}
+    required = {"finals": METHODS, "sens": SENS_METHODS, "sensrt": (), "sensx": (), "budget4x": ("dqn",), "reseedfinals": (), "scale": (), "arch": (), "seo": (), "ablation": ("dqn",)}
 
     def complete():
         for inst in a.instances:

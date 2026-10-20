@@ -33,7 +33,9 @@ def make_agent(method: str, inst: Instance, seed: int, **kw):
     if method == "linear":
         return DQN(inst, hidden=(), rng_init=r_init, rng_sample=r_samp, **kw)
     if method == "dqn":
-        return DQN(inst, hidden=(64, 64), rng_init=r_init, rng_sample=r_samp, **kw)
+        kw = dict(kw)
+        hidden = tuple(kw.pop("hidden", (64, 64)))          # P10 (DESVIOS.md 2026-10-20): largura/profundidade da rede; padrão 64-64
+        return DQN(inst, hidden=hidden, rng_init=r_init, rng_sample=r_samp, **kw)
     if method == "pg":
         return PolicyGradient(inst, rng_init=r_init, rng_sample=r_samp, **kw)
     raise ValueError(method)

@@ -164,9 +164,29 @@ class TestBuildJobs(unittest.TestCase):
         self.assertEqual(j2.target.name, "scale2m_cb20wd.jsonl")
         self.assertGreater(j2.cost, 3 * j5.cost)
 
+    def test_arch_jobs_use_the_width_config_files_and_wait_for_scenarios(self):
+        self.assertEqual(Q.build_jobs(self.root, ("cb12wd",), ("arch",)), [])                          # sem config de largura nem cenários
+        sc = self.root / "scenarios"
+        sc.mkdir(exist_ok=True)
+        for k in ("val", "test"):
+            (sc / f"{k}_cb30wd.npz").write_bytes(b"")
+        (sc / "val_cb12wd.npz").write_bytes(b"")                                                       # só val: cb12wd ainda não entra
+        self.assertEqual(Q.build_jobs(self.root, ("cb12wd",), ("arch",)), [])                          # cenários ok, mas sem arquivos de config
+        for tag, h in (("h128", [128, 128]), ("h256", [256, 256])):
+            (self.root / "runs" / f"tuned_arch_{tag}.json").write_text(json.dumps({"dqn": {"cfg_id": 9, "cfg": {**CFG_DQN, "hidden": h}}}))
+        dump(self.root / "runs" / "arch_h128_cb30wd.jsonl", [{"method": "dqn", "seed": 0}, {"method": "dqn", "seed": 4}])
+        jobs = Q.build_jobs(self.root, ("cb12wd",), ("arch",))
+        self.assertEqual({j.key[0] for j in jobs}, {"cb30wd"})
+        self.assertEqual({j.key[2:] for j in jobs}, {("dqn_h128", s) for s in (1, 2, 3)} | {("dqn_h256", s) for s in range(5)})
+        j = next(j for j in jobs if j.key[2] == "dqn_h256")
+        self.assertTrue(j.cmd[j.cmd.index("--tuned-file") + 1].endswith("tuned_arch_h256.json"))
+        self.assertEqual(j.cmd[j.cmd.index("--budget") + 1], str(Q.BUDGET))
+        self.assertEqual(j.target.name, "arch_h256_cb30wd.jsonl")
+        self.assertGreater(j.cost, next(x for x in jobs if x.key[2] == "dqn_h128").cost)
+
     def test_kind_rank_orders_the_kinds(self):
         self.assertEqual(sorted(Q.KIND_RANK, key=Q.KIND_RANK.get),
-                         ["finals", "sens", "sensrt", "reseedfinals", "budget4x", "scale", "sensx", "seo", "ablation"])
+                         ["finals", "sens", "sensrt", "reseedfinals", "budget4x", "scale", "arch", "sensx", "seo", "ablation"])
 
     def test_sens_names_match_instance_names(self):
         names = [n for lst in Q.SENS.values() for _, n in lst]
