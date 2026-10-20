@@ -13,6 +13,7 @@ import time
 import numpy as np
 
 from .agents import DQN, PolicyGradient, QTabular
+from .dprl import DualDQN
 from .env import BSRPEnv, Instance, ScenarioSet, evaluate, run_episode, sample_scenarios
 
 SALT = 20261012
@@ -36,6 +37,10 @@ def make_agent(method: str, inst: Instance, seed: int, **kw):
         kw = dict(kw)
         hidden = tuple(kw.pop("hidden", (64, 64)))          # P10 (DESVIOS.md 2026-10-20): largura/profundidade da rede; padrão 64-64
         return DQN(inst, hidden=hidden, rng_init=r_init, rng_sample=r_samp, **kw)
+    if method == "dprl":                                       # P11: adaptação do DPRL (Liang et al., 2024); ver bsrp/dprl.py
+        kw = dict(kw)
+        hidden = tuple(kw.pop("hidden", (64, 64)))
+        return DualDQN(inst, hidden=hidden, rng_init=r_init, rng_sample=r_samp, **kw)
     if method == "pg":
         return PolicyGradient(inst, rng_init=r_init, rng_sample=r_samp, **kw)
     raise ValueError(method)

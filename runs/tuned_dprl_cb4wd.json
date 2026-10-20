@@ -1,0 +1,14 @@
+{
+ "dprl": {
+  "cfg_id": 11,
+  "cfg": {
+   "lr": 0.0005325005025996085,
+   "target_sync": 16000,
+   "train_every": 2,
+   "batch": 256,
+   "buffer": 200000,
+   "eps_decay_frac": 0.5
+  },
+  "note": "config do DQN plano da escala; sem ajuste pr\u00f3prio (P11; DESVIOS.md 2026-10-20)"
+ }
+}

@@ -184,9 +184,27 @@ class TestBuildJobs(unittest.TestCase):
         self.assertEqual(j.target.name, "arch_h256_cb30wd.jsonl")
         self.assertGreater(j.cost, next(x for x in jobs if x.key[2] == "dqn_h128").cost)
 
+    def test_dprl_jobs_use_the_scale_config_and_wait_for_files(self):
+        self.assertEqual(Q.build_jobs(self.root, ("cb12wd",), ("dprl",)), [])
+        sc = self.root / "scenarios"
+        sc.mkdir(exist_ok=True)
+        for k in ("val", "test"):
+            (sc / f"{k}_cb30wd.npz").write_bytes(b"")
+        (self.root / "runs" / "tuned_dprl_cb30wd.json").write_text(json.dumps({"dprl": {"cfg_id": 9, "cfg": CFG_DQN}}))
+        (self.root / "runs" / "tuned_dprl_cb12wd.json").write_text(json.dumps({"dprl": {"cfg_id": 9, "cfg": CFG_DQN}}))   # sem cenários: não entra
+        dump(self.root / "runs" / "dprl_cb30wd.jsonl", [{"method": "dprl", "seed": 1}])
+        jobs = Q.build_jobs(self.root, ("cb12wd",), ("dprl",))
+        self.assertEqual({j.key for j in jobs}, {("cb30wd", "dprl", "dprl", s) for s in (0, 2, 3, 4)})
+        j = jobs[0]
+        self.assertEqual(j.kind, "dprl")
+        self.assertEqual(j.cmd[j.cmd.index("--methods") + 1], "dprl")
+        self.assertTrue(j.cmd[j.cmd.index("--tuned-file") + 1].endswith("tuned_dprl_cb30wd.json"))
+        self.assertEqual(j.target.name, "dprl_cb30wd.jsonl")
+        self.assertGreater(j.cost, Q.est_cost("dqn", CFG_DQN))
+
     def test_kind_rank_orders_the_kinds(self):
         self.assertEqual(sorted(Q.KIND_RANK, key=Q.KIND_RANK.get),
-                         ["finals", "sens", "sensrt", "reseedfinals", "budget4x", "scale", "arch", "sensx", "seo", "ablation"])
+                         ["finals", "sens", "sensrt", "reseedfinals", "budget4x", "scale", "dprl", "arch", "sensx", "seo", "ablation"])
 
     def test_sens_names_match_instance_names(self):
         names = [n for lst in Q.SENS.values() for _, n in lst]
