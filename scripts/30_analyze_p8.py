@@ -435,10 +435,127 @@ def scale_section(runs):
     return L + [""]
 
 
+ARCH_TAGS = (("h128", "128–128", "Wide"), ("h256", "256–256", "Wider"))
+
+
+def arch_data(runs, insts=("cb30wd", "cb12wd")):
+    """P10 (DESVIOS.md 2026-10-20): DQN com rede mais larga (config nº 9 do P1 + hidden), 500 mil passos, × DQN 64–64 do mesmo orçamento, × rollout.
+    Demanda perdida POSITIVA. 64–64: 5 sementes (`scale_cb30wd.jsonl`) em 30 est.; 10 sementes (principal) em 12 est. Rollout: subconjunto de 300 cenários em
+    30 est. (heurística e DQN nos mesmos cenários), 1000 em 12 est."""
+    runs = Path(runs)
+    out = {}
+    for inst in insts:
+        sd = scale_data(runs, scales=(inst,)).get(inst)
+        if not sd or "500k" not in sd:
+            continue
+        base_rows = ([r for r in rows_of(runs / "final_primary.jsonl") if r["instance"] == inst and r["method"] == "dqn"] if inst == "cb12wd"
+                      else [r for r in rows_of(runs / f"scale_{inst}.jsonl") if r["method"] == "dqn"])
+        base = np.array([r["test_mean"] for r in base_rows])
+        h = -sd["heur"]
+        ro = sd.get("rollout")
+        n_sub = ro["n"] if ro and ro.get("subset") else None
+        rec = {"n_st": sd["n_st"], "base_n": len(base), "base": -float(base.mean()), "heur": sd["heur"], "stay": sd["stay"],
+               "rollout": ro["mean"] if ro else None, "rollout_subset": n_sub}
+        for tag, label, nm in ARCH_TAGS:
+            rows = [r for r in rows_of(runs / f"arch_{tag}_{inst}.jsonl") if r["method"] == "dqn"]
+            if len(rows) < 2:
+                continue
+            x = np.array([r["test_mean"] for r in rows])
+            dw, (wl, wh), _ = welch(x, base)
+            lo, hi = ci_t(x)
+            t = {"label": label, "n": len(x), "mean": -float(x.mean()), "lo": -float(hi), "hi": -float(lo), "delta": float(dw), "delta_lo": float(wl), "delta_hi": float(wh),
+                 "red": float(100 * (h - x.mean()) / h), "train_seconds": float(np.mean([r.get("train_seconds", np.nan) for r in rows]))}
+            if ro:
+                if n_sub:
+                    xs = np.array([float(np.mean(r["test_rewards"][:n_sub])) for r in rows])
+                    rr = -ro["mean"]
+                else:
+                    xs, rr = x, -ro["mean"]
+                d = xs - rr
+                dlo, dhi = ci_t(d)
+                t.update({"vs_roll": float(d.mean()), "vs_roll_lo": float(dlo), "vs_roll_hi": float(dhi)})
+            rec[nm] = t
+        out[inst] = rec
+    return out
+
+
+def arch_section(runs):
+    d = arch_data(runs)
+    L = ["## (e) Capacidade da rede: DQN com 128–128 e 256–256 (P10)\n",
+         "> Config nº 9 do P1 (sem reajuste dos demais hiperparâmetros) com `hidden` mais largo, 500 mil passos, 5 sementes; 64–64 = mesmo orçamento (5 sementes em 30 est., 10 em 12 est.). "
+         "'Δ vs 64–64' = Welch (larga − 64–64, em reward; positivo favorece a rede larga). 'DQN − rollout' em reward (negativo = o rollout continua melhor; em 30 est. no subconjunto de 300 cenários). "
+         "Leitura pré-fixada em `DESVIOS.md` (2026-10-20).\n",
+         "| escala | rede | n | demanda perdida [IC95%] | Δ vs 64–64 [IC95% Welch] | redução vs heurística | DQN − rollout [IC95%] | leitura |", "|---|---|---|---|---|---|---|---|"]
+    for inst, r in d.items():
+        L.append(f"| {r['n_st']} est. | 64–64 (n = {r['base_n']}) | {r['base_n']} | {fmt(r['base'])} | — | {100 * (r['heur'] - r['base']) / r['heur']:.0f}% | — | referência |")
+        for tag, label, nm in ARCH_TAGS:
+            t = r.get(nm)
+            if not t:
+                L.append(f"| {r['n_st']} est. | {label} | 0 | (pendente) | | | | |")
+                continue
+            reading = ("a capacidade da rede limita o DQN" if t["delta_lo"] > 0 else ("a rede maior piora (demais hiperparâmetros não reajustados)" if t["delta_hi"] < 0
+                                                                                           else "não limita, dentro do testado"))
+            vs = f"{fmt(t['vs_roll'])} [{fmt(t['vs_roll_lo'])}; {fmt(t['vs_roll_hi'])}]" if "vs_roll" in t else "—"
+            L.append(f"| {r['n_st']} est. | {label} | {t['n']} | {fmt(t['mean'])} [{fmt(t['lo'])}; {fmt(t['hi'])}] | {fmt(t['delta'])} [{fmt(t['delta_lo'])}; {fmt(t['delta_hi'])}] | "
+                     f"{t['red']:.0f}% | {vs} | {reading} |")
+    return L + [""]
+
+
+def dprl_data(runs, scales=SCALES):
+    """P11 (DESVIOS.md 2026-10-20): adaptação do DPRL (inventário + roteamento) × DQN plano do mesmo orçamento (500 mil passos), × heurística, × rollout.
+    Demanda perdida POSITIVA. Plano: 10 sementes (principal) em 4/8/12; 5 (`scale_<inst>.jsonl`) em 20/30. Rollout em 20/30: subconjunto de cenários."""
+    runs = Path(runs)
+    out = {}
+    for inst in scales:
+        rows = [r for r in rows_of(runs / f"dprl_{inst}.jsonl") if r["method"] == "dprl"]
+        sd = scale_data(runs, scales=(inst,)).get(inst)
+        if len(rows) < 2 or not sd or "500k" not in sd:
+            continue
+        flat_rows = ([r for r in rows_of(runs / "final_primary.jsonl") if r["instance"] == inst and r["method"] == "dqn"] if inst in ("cb4wd", "cb8wd", "cb12wd")
+                     else [r for r in rows_of(runs / f"scale_{inst}.jsonl") if r["method"] == "dqn"])
+        flat = np.array([r["test_mean"] for r in flat_rows])
+        x = np.array([r["test_mean"] for r in rows])
+        h = -sd["heur"]
+        dw, (wl, wh), _ = welch(x, flat)
+        lo, hi = ci_t(x)
+        c1 = x - h
+        clo, chi = ci_t(c1)
+        rec = {"n_st": sd["n_st"], "n": len(x), "flat_n": len(flat), "flat": -float(flat.mean()), "mean": -float(x.mean()), "lo": -float(hi), "hi": -float(lo),
+               "delta": float(dw), "delta_lo": float(wl), "delta_hi": float(wh), "c1": float(c1.mean()), "c1_lo": float(clo), "c1_hi": float(chi),
+               "red": float(100 * (h - x.mean()) / h), "flat_red": float(100 * (h - flat.mean()) / h), "heur": sd["heur"],
+               "train_seconds": float(np.mean([r.get("train_seconds", np.nan) for r in rows]))}
+        ro = sd.get("rollout")
+        if ro:
+            n_sub = ro["n"] if ro.get("subset") else None
+            xs = np.array([float(np.mean(r["test_rewards"][:n_sub])) for r in rows]) if n_sub else x
+            d = xs - (-ro["mean"])
+            vlo, vhi = ci_t(d)
+            rec.update({"vs_roll": float(d.mean()), "vs_roll_lo": float(vlo), "vs_roll_hi": float(vhi), "rollout": ro["mean"], "rollout_red": ro["red"]})
+        out[inst] = rec
+    return out
+
+
+def dprl_section(runs):
+    d = dprl_data(runs)
+    L = ["## (f) Adaptação do DPRL: duas políticas (inventário + roteamento) (P11)\n",
+         "> Adaptação (não reprodução) de Liang et al. (2024): `bsrp/dprl.py`; config do DQN plano da escala, **sem ajuste próprio**, 500 mil passos, 5 sementes. 'Δ vs plano' = Welch "
+         "(dual − DQN plano do mesmo orçamento, em reward; positivo favorece o dual). 'dual − rollout' em reward (negativo = o rollout continua melhor; em 20/30 est. nos primeiros cenários de teste). "
+         "Leitura pré-fixada em `DESVIOS.md` (2026-10-20).\n",
+         "| escala | DQN plano [n] | dual [IC95%] (n) | Δ vs plano [IC95% Welch] | redução vs heurística (plano → dual) | dual − rollout [IC95%] | leitura |", "|---|---|---|---|---|---|---|"]
+    for inst, r in d.items():
+        reading = ("a fatoração em duas políticas melhora o DQN" if r["delta_lo"] > 0 else ("a fatoração em duas políticas piora o DQN" if r["delta_hi"] < 0 else "empate"))
+        vs = f"{fmt(r['vs_roll'])} [{fmt(r['vs_roll_lo'])}; {fmt(r['vs_roll_hi'])}]" if "vs_roll" in r else "—"
+        L.append(f"| {r['n_st']} est. | {fmt(r['flat'])} [{r['flat_n']}] | {fmt(r['mean'])} [{fmt(r['lo'])}; {fmt(r['hi'])}] ({r['n']}) | {fmt(r['delta'])} [{fmt(r['delta_lo'])}; {fmt(r['delta_hi'])}] | "
+                 f"{r['flat_red']:.0f}% → {r['red']:.0f}% | {vs} | {reading} |")
+    if not d:
+        L.append("| (pendente) | | | | | | |")
+    return L + [""]
+
+
 def p8_report(runs):
     L = ["# P8 — ancoragem e robustez da conclusão central (gerado por `scripts/30_analyze_p8.py`)\n",
          "> Desenho e leituras fixados em `DESVIOS.md` (2026-10-18), **antes** de rodar. Reward ≤ 0; maior = melhor; unidade de análise = semente de treino.\n"]
-    return L + oracle_section(runs) + budget_section(runs) + reseed_section(runs) + scale_section(runs)
+    return L + oracle_section(runs) + budget_section(runs) + reseed_section(runs) + scale_section(runs) + arch_section(runs) + dprl_section(runs)
 
 
 def main():

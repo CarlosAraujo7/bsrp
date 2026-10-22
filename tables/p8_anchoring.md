@@ -75,3 +75,28 @@
 A reavaliação do pool de 16 configs escolheu a mesma config do P1 de 12 estações (nº 9; val -372,37 contra -376,41 da segunda melhor): seleção confirmada; o resultado é o de 500 mil passos acima. Leitura pré-fixada: a configuração herdada de 12 estações não explica a queda da vantagem (dentro deste espaço de busca).
 
 
+## (e) Capacidade da rede: DQN com 128–128 e 256–256 (P10)
+
+> Config nº 9 do P1 (sem reajuste dos demais hiperparâmetros) com `hidden` mais largo, 500 mil passos, 5 sementes; 64–64 = mesmo orçamento (5 sementes em 30 est., 10 em 12 est.). 'Δ vs 64–64' = Welch (larga − 64–64, em reward; positivo favorece a rede larga). 'DQN − rollout' em reward (negativo = o rollout continua melhor; em 30 est. no subconjunto de 300 cenários). Leitura pré-fixada em `DESVIOS.md` (2026-10-20).
+
+| escala | rede | n | demanda perdida [IC95%] | Δ vs 64–64 [IC95% Welch] | redução vs heurística | DQN − rollout [IC95%] | leitura |
+|---|---|---|---|---|---|---|---|
+| 30 est. | 64–64 (n = 5) | 5 | 338,45 | — | 11% | — | referência |
+| 30 est. | 128–128 | 5 | 357,45 [346,68; 368,23] | -19,00 [-29,59; -8,40] | 6% | -68,72 [-79,09; -58,35] | a rede maior piora (demais hiperparâmetros não reajustados) |
+| 30 est. | 256–256 | 5 | 391,36 [381,70; 401,01] | -52,90 [-62,39; -43,41] | -3% | -102,28 [-112,74; -91,81] | a rede maior piora (demais hiperparâmetros não reajustados) |
+| 12 est. | 64–64 (n = 10) | 10 | 55,94 | — | 30% | — | referência |
+| 12 est. | 128–128 | 5 | 62,73 [60,06; 65,39] | -6,79 [-9,42; -4,16] | 22% | -14,63 [-17,30; -11,97] | a rede maior piora (demais hiperparâmetros não reajustados) |
+| 12 est. | 256–256 | 5 | 73,15 [71,80; 74,50] | -17,21 [-18,78; -15,64] | 9% | -25,05 [-26,41; -23,70] | a rede maior piora (demais hiperparâmetros não reajustados) |
+
+## (f) Adaptação do DPRL: duas políticas (inventário + roteamento) (P11)
+
+> Adaptação (não reprodução) de Liang et al. (2024): `bsrp/dprl.py`; config do DQN plano da escala, **sem ajuste próprio**, 500 mil passos, 5 sementes. 'Δ vs plano' = Welch (dual − DQN plano do mesmo orçamento, em reward; positivo favorece o dual). 'dual − rollout' em reward (negativo = o rollout continua melhor; em 20/30 est. nos primeiros cenários de teste). Leitura pré-fixada em `DESVIOS.md` (2026-10-20).
+
+| escala | DQN plano [n] | dual [IC95%] (n) | Δ vs plano [IC95% Welch] | redução vs heurística (plano → dual) | dual − rollout [IC95%] | leitura |
+|---|---|---|---|---|---|---|
+| 4 est. | 9,77 [10] | 10,19 [8,96; 11,41] (5) | -0,41 [-1,61; 0,78] | 60% → 58% | 1,65 [0,42; 2,87] | empate |
+| 8 est. | 29,69 [10] | 24,65 [23,97; 25,32] (5) | 5,04 [4,22; 5,86] | 44% → 53% | 2,43 [1,75; 3,11] | a fatoração em duas políticas melhora o DQN |
+| 12 est. | 55,94 [10] | 47,20 [45,78; 48,63] (5) | 8,74 [7,12; 10,36] | 30% → 41% | 0,89 [-0,53; 2,32] | a fatoração em duas políticas melhora o DQN |
+| 20 est. | 219,09 [5] | 211,48 [207,35; 215,61] (5) | 7,61 [2,75; 12,46] | 21% → 24% | -13,24 [-17,95; -8,53] | a fatoração em duas políticas melhora o DQN |
+| 30 est. | 338,45 [5] | 332,86 [323,99; 341,73] (5) | 5,60 [-3,13; 14,32] | 11% → 12% | -44,05 [-53,07; -35,03] | empate |
+

@@ -55,3 +55,7 @@ Colunas: `t, feed_ts, station_id, veh, veh_dis, docks, docks_dis, inst, rent, re
 - **Licença/termos: NÃO verificados.** O feed não declara licença nem `terms_url`; busca web não achou termos públicos. Coletar a baixa frequência para pesquisa é provavelmente aceitável, mas **redistribuir os dados brutos ou publicá-los não**, até haver resposta. Sugestão: escrever ao contato do feed pedindo autorização de uso acadêmico e de citação/publicação de agregados.
 - **Calendário na janela:** 12/out (feriado), 2/nov (Finados), 15/nov (Proclamação, domingo); 2º turno das eleições gerais em 25/out *(confirmar)*. Marcar esses dias no pré-processamento; a janela é primavera, enquanto o Citi Bike é de janeiro — não comparar níveis de demanda entre as duas fontes.
 - **Dias de teste (hold-out):** definir **antes** de olhar os dados (ver `PROTOCOLO_RIGOR.md` §8).
+
+## Encerramento (22/out/2026)
+
+**Coleta ENCERRADA por decisão do usuário.** A última coleta foi em 20/out/2026 10:20 (hora local; 13:20 UTC); a tarefa agendada `BSRP-Tembici-GBFS` não existe mais no Agendador e **não será recriada** (o usuário não quer mais tarefas agendadas). Janela coletada: 11/out 13:27 a 20/out 13:20 UTC, 2586 de ~2591 coletas esperadas (99,8%), 5 lacunas > 2 intervalos (a maior de 20 min); só **uma semana completa** (seg 12 a dom 18/out). O critério de ≥ 4 semanas completas do protocolo não será atingido: o estudo de caso Tembici (P5) fica como **trabalho futuro**. Os dados brutos continuam em `data/live/` (não redistribuir; licença não verificada); o hold-out **não foi tocado**.

@@ -36,7 +36,7 @@ BASES = ("cb4wd", "cb8wd", "cb12wd")
 LETTER = {"cb4wd": "A", "cb8wd": "B", "cb12wd": "C"}
 NST = {"cb4wd": 4, "cb8wd": 8, "cb12wd": 12}
 # cores por ENTIDADE (ordem fixa da paleta validada em light) + neutros
-COL = {"dqn": "#2a78d6", "rollout": "#eb6834", "linear": "#1baf7a", "tab_station": "#eda100", "pg": "#e87ba4",
+COL = {"dprl": "#8d5a2b", "dqn": "#2a78d6", "rollout": "#eb6834", "linear": "#1baf7a", "tab_station": "#eda100", "pg": "#e87ba4",
        "tab_cluster": "#008300", "a2c": "#4a3aa7", "a2c_t": "#9085e9", "heur": "#52514e", "stay": "#898781"}
 LABEL = {"stay": "Parada", "heur": "Heurística calibrada", "rollout": "Rollout (modelo)", "dqn": "DQN", "pg": "Policy gradient",
          "a2c": "A2C (Seo, publicado)", "a2c_t": "A2C (Seo, ajustado)", "linear": "Linear", "tab_station": "Tabular (estação)", "tab_cluster": "Tabular (cluster)"}
@@ -171,7 +171,7 @@ def retuned(runs: Path) -> dict:
 # ──────────────────────────────────────────────────────────────────────────────
 # FIGURAS
 # ──────────────────────────────────────────────────────────────────────────────
-def fig_scale(SC, outdir, RT=None):
+def fig_scale(SC, outdir, RT=None, DP=None):
     """P9: redução da demanda perdida em relação à heurística calibrada, de 4 a 30 estações (DQN 500 mil e 2 milhões de passos; rollout só até 12)."""
     fig, ax = plt.subplots(figsize=(5.4, 3.2))
     csv_rows = []
@@ -191,6 +191,10 @@ def fig_scale(SC, outdir, RT=None):
     if ro:
         ax.plot([n for n, _ in ro], [v for _, v in ro], "-", color=COL["rollout"], lw=1.6, marker="s", ms=4.5, label="Rollout (modelo)", zorder=3)
         csv_rows += [["rollout", n, f"{v:.1f}", "", ""] for n, v in ro]
+    if DP:
+        dp = sorted((r["n_st"], r["red"]) for r in DP.values())
+        ax.plot([n for n, _ in dp], [v for _, v in dp], "-.", color=COL["dprl"], lw=1.6, marker="^", ms=5, label="DPRL adaptado (duas políticas), 500 mil", zorder=3)
+        csv_rows += [["dprl_500k", n, f"{v:.1f}", "", ""] for n, v in dp]
     ax.axhline(0, color=AXIS, lw=1.0, zorder=1)
     ax.set_xticks([r["n_st"] for r in SC.values()])
     ax.set_xlabel("estações")
@@ -474,6 +478,24 @@ def write_tables_and_macros(R, A, S, root, runs):
                 mac[f"scDqn{nm}{L}"], mac[f"scDqn{nm}Lo{L}"], mac[f"scDqn{nm}Hi{L}"] = pt(t["mean"]), pt(t["lo"]), pt(t["hi"])
                 mac[f"scC{nm}{L}"], mac[f"scC{nm}Lo{L}"], mac[f"scC{nm}Hi{L}"] = pt(t["c1"]), pt(t["c1_lo"]), pt(t["c1_hi"])
                 mac[f"scRed{nm}{L}"] = f"{t['red']:.0f}"
+    for inst, r in P8.get("arch", {}).items():                                              # P10: capacidade da rede
+        L = SC_LETTER[inst]
+        for _, _, nm in AN30.ARCH_TAGS:
+            if nm in r:
+                a = r[nm]
+                mac[f"arch{nm}N{L}"], mac[f"arch{nm}{L}"], mac[f"arch{nm}Lo{L}"], mac[f"arch{nm}Hi{L}"] = str(a["n"]), pt(a["mean"]), pt(a["lo"]), pt(a["hi"])
+                mac[f"arch{nm}Delta{L}"], mac[f"arch{nm}DeltaLo{L}"], mac[f"arch{nm}DeltaHi{L}"] = pt(a["delta"]), pt(a["delta_lo"]), pt(a["delta_hi"])
+                mac[f"arch{nm}Red{L}"] = f"{a['red']:.0f}"
+                if "vs_roll" in a:
+                    mac[f"arch{nm}VsRoll{L}"], mac[f"arch{nm}VsRollLo{L}"], mac[f"arch{nm}VsRollHi{L}"] = pt(a["vs_roll"]), pt(a["vs_roll_lo"]), pt(a["vs_roll_hi"])
+        mac[f"archBase{L}"] = pt(r["base"])
+    for inst, r in P8.get("dprl", {}).items():                                              # P11: adaptação do DPRL
+        L = SC_LETTER[inst]
+        mac[f"dprlN{L}"], mac[f"dprl{L}"], mac[f"dprlLo{L}"], mac[f"dprlHi{L}"] = str(r["n"]), pt(r["mean"]), pt(r["lo"]), pt(r["hi"])
+        mac[f"dprlFlat{L}"], mac[f"dprlRed{L}"], mac[f"dprlFlatRed{L}"] = pt(r["flat"]), f"{r['red']:.0f}", f"{r['flat_red']:.0f}"
+        mac[f"dprlDelta{L}"], mac[f"dprlDeltaLo{L}"], mac[f"dprlDeltaHi{L}"] = pt(r["delta"]), pt(r["delta_lo"]), pt(r["delta_hi"])
+        if "vs_roll" in r:
+            mac[f"dprlVsRoll{L}"], mac[f"dprlVsRollLo{L}"], mac[f"dprlVsRollHi{L}"] = pt(r["vs_roll"]), pt(r["vs_roll_lo"]), pt(r["vs_roll_hi"])
     rt30 = P8.get("scale_rt")
     if rt30 and "n" in rt30:                                                              # P9b: DQN reajustado em 30 estações
         mac["scRtCfg"], mac["scRtSame"] = str(rt30["cfg_id"]), "sim" if rt30["same"] else "n\\~ao"
@@ -709,6 +731,17 @@ def check_claims(R, A, S):
                     "P9c: com 20 e 30 estações o rollout (sem ajuste) é melhor que o DQN, com 500 mil e 2 milhões de passos (IC exclui 0)"))
         out.append((all(sc[k][tag]["c1_lo"] > 0 for k in ("cb20wd", "cb30wd") for tag in ("500k", "2m")),
                     "P9: o DQN supera a heurística calibrada em 20 e 30 estações (IC de C1 exclui 0), com 500 mil e 2 milhões de passos"))
+    ar = P8.get("arch", {})
+    if "cb30wd" in ar and all(nm in ar["cb30wd"] for _, _, nm in AN30.ARCH_TAGS):
+        out.append((all(ar["cb30wd"][nm]["delta_hi"] < 0 for _, _, nm in AN30.ARCH_TAGS), "P10: com 30 estações as redes 128–128 e 256–256 pioram o DQN (IC de Welch exclui 0), sem reajuste dos demais hiperparâmetros"))
+    if "cb12wd" in ar and all(nm in ar["cb12wd"] for _, _, nm in AN30.ARCH_TAGS):
+        out.append((all(ar["cb12wd"][nm]["delta_hi"] < 0 for _, _, nm in AN30.ARCH_TAGS), "P10: com 12 estações as redes 128–128 e 256–256 pioram o DQN (IC de Welch exclui 0)"))
+    dp = P8.get("dprl", {})
+    if len(dp) == 5:
+        out.append((all(dp[k]["delta_lo"] > 0 for k in ("cb8wd", "cb12wd", "cb20wd")), "P11: o DPRL adaptado melhora o DQN plano em 8, 12 e 20 estações (IC de Welch exclui 0)"))
+        out.append((all(dp[k]["delta_lo"] <= 0 <= dp[k]["delta_hi"] for k in ("cb4wd", "cb30wd")), "P11: o DPRL adaptado empata com o DQN plano em 4 e 30 estações"))
+        out.append((dp["cb8wd"]["vs_roll_lo"] > 0 and dp["cb12wd"]["vs_roll_lo"] <= 0 <= dp["cb12wd"]["vs_roll_hi"] and dp["cb20wd"]["vs_roll_hi"] < 0 and dp["cb30wd"]["vs_roll_hi"] < 0,
+                    "P11: o DPRL adaptado supera o rollout em 8 estações, empata em 12 e fica atrás em 20 e 30"))
     p3c = {it["name"]: it for it in P8["p3c"] if "pending" not in it}
     if {"cb12wdx0.5", "cb12we"} <= set(p3c):
         k, w = p3c["cb12wdx0.5"], p3c["cb12we"]
@@ -732,14 +765,14 @@ def main():
     (outdir / "dados").mkdir(parents=True, exist_ok=True)
     R, A, S = collect(runs), ablation(runs), sensitivity(runs)
     S["rt"] = retuned(runs)
-    S["p8"] = {**AN30.p8_data(runs), "p3c": AN30.p3c_data(runs), "reseed": AN30.reseed_data(runs), "scale": AN30.scale_data(runs), "scale_rt": AN30.scale_retuned_data(runs)}
+    S["p8"] = {**AN30.p8_data(runs), "p3c": AN30.p3c_data(runs), "reseed": AN30.reseed_data(runs), "scale": AN30.scale_data(runs), "scale_rt": AN30.scale_retuned_data(runs), "arch": AN30.arch_data(runs), "dprl": AN30.dprl_data(runs)}
     fig_main(R, outdir)
     fig_curves(R, outdir)
     fig_pool(R, outdir)
     fig_ablation(A, outdir)
     fig_sensitivity(S, outdir)
     if len(S["p8"]["scale"]) >= 4 and any("500k" in r for k, r in S["p8"]["scale"].items() if k in ("cb20wd", "cb30wd")):
-        fig_scale(S["p8"]["scale"], outdir, S["p8"].get("scale_rt"))
+        fig_scale(S["p8"]["scale"], outdir, S["p8"].get("scale_rt"), S["p8"].get("dprl"))
     mac = write_tables_and_macros(R, A, S, ROOT, runs)
     for ok, msg in check_claims(R, A, S):
         print(("ok     " if ok else "ALERTA ") + msg)

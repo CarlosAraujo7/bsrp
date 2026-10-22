@@ -31,7 +31,7 @@ verdadeiro da demanda supera o DQN com 8 e 12 esta\c{c}\~oes no teste sint\'etic
 com o qu\'adruplo do or\c{c}amento de treino, o DQN empata com o \emph{rollout} com 8 esta\c{c}\~oes e continua atr\'as com 12 e, sem reajuste, com 20 e 30.
 Representa\c{c}\~oes tabulares e lineares n\~ao superam a heur\'istica; um A2C adaptado de um trabalho publicado, com os hiperpar\^ametros originais, n\~ao \'e competitivo e, mesmo ajustado com o mesmo or\c{c}amento dos demais, s\'o supera a heur\'istica com 4 esta\c{c}\~oes e fica atr\'as do DQN em todas as escalas.
 Na abla\c{c}\~ao, apenas o \emph{replay} \'e comprovadamente necess\'ario. A vantagem do DQN n\~ao se mant\'em com demanda baixa em 12 esta\c{c}\~oes. Um planejador clarividente mostra que o limite de demanda perdida \'e frouxo: quase toda ela \'e evit\'avel com conhecimento do futuro.
-A vantagem relativa do DQN sobre a heur\'istica diminui com o tamanho do sistema (de \scRedFiveA\% com 4 esta\c{c}\~oes a \scRedFiveE\% com 30, sem reajuste de hiperpar\^ametros).
+Uma adapta\c{c}\~ao do DPRL (duas pol\'iticas, de invent\'ario e de roteamento) melhora o DQN plano com 8, 12 e 20 esta\c{c}\~oes e empata com o \emph{rollout} com 12, e redes mais largas n\~ao ajudam. A vantagem relativa do DQN sobre a heur\'istica diminui com o tamanho do sistema (de \scRedFiveA\% com 4 esta\c{c}\~oes a \scRedFiveE\% com 30, sem reajuste de hiperpar\^ametros).
 Discutimos os limites do simulador (sem roteamento) e o que o protocolo corrigiu em resultados anteriores.
 \end{abstract}
 
@@ -82,7 +82,7 @@ Citi Bike de janeiro a junho de 2024 \citep{citibike}, sem fator de escala. A di
 inst\^ancias de 4, 8 e 12 esta\c{c}\~oes usam as mesmas esta\c{c}\~oes, capacidades e agrupamentos. O teste usa 1000 cen\'arios amostrados do modelo
 e, separadamente, 24 dias \'uteis reais das semanas de teste, em que a ocupa\c{c}\~ao inicial \'e desconhecida (50\% $\pm$ 2). Em torno de 2--5\% das
 partidas terminam dentro da inst\^ancia, de modo que ignorar a conserva\c{c}\~ao de bicicletas \'e uma aproxima\c{c}\~ao razo\'avel nesses tamanhos.
-\pend{inst\^ancia Tembici (GBFS, s\'o estoque, sem origem--destino): o pipeline est\'a pronto e a janela de coleta ainda n\~ao tem 4 semanas completas}
+Tamb\'em coletamos o estoque por esta\c{c}\~ao (GBFS, sem origem--destino) de cinco cidades brasileiras da Tembici por cerca de nove dias, at\'e 20/out/2026; como a janela tem uma \'unica semana completa, o estudo de caso previsto (treino, valida\c{c}\~ao e teste por semanas, com uma semana de reserva) n\~ao \'e vi\'avel e fica como trabalho futuro.
 
 \section{M\'etodos}
 \textbf{Refer\^encias sem aprendizado.} A pol\'itica \emph{parada} e uma heur\'istica gulosa com limiares de ocupa\c{c}\~ao e passo m\'aximo calibrados em
@@ -91,7 +91,11 @@ valida\c{c}\~ao em grades estendidas at\'e o \'otimo ficar no interior; ela cont
 \textbf{Rollout} \citep{bertsekas1997}. Para cada a\c{c}\~ao v\'alida, estima-se o retorno de executar a heur\'istica-base por $h$ decis\~oes em $K$ futuros amostrados do
 \emph{modelo} de Poisson (n\~ao da demanda real). \textbf{Aprendizes.} Q-learning tabular (por agrupamento ou por esta\c{c}\~ao), aproxima\c{c}\~ao linear e
 rede 64--64 com DQN \citep{mnih2015} (m\'ascara de a\c{c}\~oes v\'alidas, \emph{replay}, rede-alvo e Double DQN \citep{vanhasselt2016}), \emph{policy gradient} com linha de base e
-A2C (\emph{advantage actor-critic} \citep{mnih2016}) adaptado de \citet{seo2022}: na variante \emph{publicada}, rede $3\times 24$, taxa de aprendizado $5\cdot 10^{-4}$, $\gamma = 0{,}9$, sem ajuste; na variante \emph{ajustada}, as taxas de aprendizado, $\gamma$, um bônus de entropia e a escala da recompensa s\~ao escolhidos em valida\c{c}\~ao entre 16 configura\c{c}\~oes, como nos demais aprendizes. Todos usam o mesmo
+A2C (\emph{advantage actor-critic} \citep{mnih2016}) adaptado de \citet{seo2022}: na variante \emph{publicada}, rede $3\times 24$, taxa de aprendizado $5\cdot 10^{-4}$, $\gamma = 0{,}9$, sem ajuste; na variante \emph{ajustada}, as taxas de aprendizado, $\gamma$, um bônus de entropia e a escala da recompensa s\~ao escolhidos em valida\c{c}\~ao entre 16 configura\c{c}\~oes, como nos demais aprendizes. \textbf{Pol\'itica dupla.} Uma adapta\c{c}\~ao do DPRL de \citet{liang2024}: duas DQN com estado compartilhado, uma de invent\'ario, que escolhe a varia\c{c}\~ao de estoque
+na esta\c{c}\~ao atual (sem passagem de tempo), e uma de roteamento, que escolhe o destino no estado p\'os-invent\'ario; as cabe\c{c}as t\^em 5 e $n$ sa\'idas em vez de $5n$.
+\'E uma adapta\c{c}\~ao, n\~ao uma reprodu\c{c}\~ao: um ve\'iculo, simulador pr\'oprio, cinco varia\c{c}\~oes em vez de tr\^es n\'iveis de preenchimento, sem a inicializa\c{c}\~ao
+heur\'istica do roteamento, e com os hiperpar\^ametros do DQN plano de cada escala, sem ajuste pr\'oprio (vi\'es a favor do DQN plano, que teve 16 configura\c{c}\~oes). Gasta
+cerca de $1{,}8\times$ mais por passo, por fazer duas atualiza\c{c}\~oes. Todos usam o mesmo
 or\c{c}amento de $500\,000$ passos de ambiente.
 
 \section{Protocolo experimental}
@@ -178,9 +182,24 @@ segunda melhor), de modo que a configura\c{c}\~ao herdada n\~ao explica a queda 
 \begin{figure}[t]
 \centering
 \includegraphics[width=0.75\textwidth]{fig_escala.pdf}
-\caption{Redu\c{c}\~ao da demanda perdida em rela\c{c}\~ao \`a heur\'istica calibrada, de 4 a 30 esta\c{c}\~oes (teste sint\'etico; faixa: IC95\% sobre sementes). Com 20 e 30 esta\c{c}\~oes o \emph{rollout} usa $(h,K)=(3,64)$ sem ajuste e 300 cen\'arios de teste.}
+\caption{Redu\c{c}\~ao da demanda perdida em rela\c{c}\~ao \`a heur\'istica calibrada, de 4 a 30 esta\c{c}\~oes (teste sint\'etico; faixa: IC95\% sobre sementes). Com 20 e 30 esta\c{c}\~oes o \emph{rollout} usa $(h,K)=(3,64)$ sem ajuste e 300 cen\'arios de teste. DPRL adaptado: 500 mil passos, 5 sementes, sem ajuste pr\'oprio.}
 \label{fig:escala}
 \end{figure}
+
+\subsection{Pol\'itica dupla (DPRL adaptado) e capacidade da rede}
+\textbf{Pol\'itica dupla.} Com o mesmo or\c{c}amento de 500 mil passos de ambiente (e cerca de $1{,}8\times$ o custo de c\'alculo), a pol\'itica dupla melhora o DQN plano com 8, 12 e 20
+esta\c{c}\~oes (\dprlDeltaB\ [\dprlDeltaLoB; \dprlDeltaHiB], \dprlDeltaC\ [\dprlDeltaLoC; \dprlDeltaHiC] e \dprlDeltaD\ [\dprlDeltaLoD; \dprlDeltaHiD] em \emph{reward}; Welch) e empata com 4 e 30
+(\dprlDeltaA\ [\dprlDeltaLoA; \dprlDeltaHiA] e \dprlDeltaE\ [\dprlDeltaLoE; \dprlDeltaHiE]). A redu\c{c}\~ao sobre a heur\'istica passa de \dprlFlatRedB\% para \dprlRedB\% com 8 esta\c{c}\~oes, de \dprlFlatRedC\% para
+\dprlRedC\% com 12, de \dprlFlatRedD\% para \dprlRedD\% com 20 e de \dprlFlatRedE\% para \dprlRedE\% com 30. Contra o \emph{rollout}, a pol\'itica dupla o supera com 8 esta\c{c}\~oes
+(\dprlVsRollB\ [\dprlVsRollLoB; \dprlVsRollHiB], em \emph{reward}; positivo favorece a pol\'itica dupla), empata com 12 (\dprlVsRollC\ [\dprlVsRollLoC; \dprlVsRollHiC]) e fica atr\'as com 20 e 30
+(\dprlVsRollD\ [\dprlVsRollLoD; \dprlVsRollHiD] e \dprlVsRollE\ [\dprlVsRollLoE; \dprlVsRollHiE]): fatorar o espa\c{c}o de a\c{c}\~oes reduz, mas n\~ao elimina, a queda com a escala
+(Figura~\ref{fig:escala}). Ressalvas: uma \'unica configura\c{c}\~ao, escolhida para o DQN plano, e n\~ao se separa o efeito da fatora\c{c}\~ao do de haver duas atualiza\c{c}\~oes por passo.
+
+\textbf{Capacidade da rede.} A busca de hiperpar\^ametros nunca variou a arquitetura (64--64), e a vantagem do DQN cai com a escala; testamos se faltava capacidade treinando redes 128--128 e
+256--256, com a configura\c{c}\~ao de cada escala e 500 mil passos (\archWiderNE\ sementes). Com 30 esta\c{c}\~oes as duas pioram o DQN (\archWideDeltaE\ [\archWideDeltaLoE; \archWideDeltaHiE] e
+\archWiderDeltaE\ [\archWiderDeltaLoE; \archWiderDeltaHiE] em \emph{reward} contra a 64--64), e com 12 esta\c{c}\~oes as duas tamb\'em (128--128: \archWideDeltaC\ [\archWideDeltaLoC; \archWideDeltaHiC]; 256--256: \archWiderDeltaC\
+[\archWiderDeltaLoC; \archWiderDeltaHiC]). A hip\'otese de que a capacidade limita o DQN n\~ao se sustenta, portanto, dentro do testado; as redes largas usaram hiperpar\^ametros escolhidos para a
+64--64, e uma rede maior pode exigir outros.
 
 \subsection{Representa\c{c}\~ao e m\'etodos da literatura}
 Tabulares e linear n\~ao superam a heur\'istica em nenhuma escala, mesmo com 16 configura\c{c}\~oes por m\'etodo; em 8 e 12 esta\c{c}\~oes ficam pr\'oximos
@@ -244,7 +263,7 @@ $\times 1$ n\~ao explica essa perda sozinha; n\~ao se exclui que alguma configur
 \section{Limita\c{c}\~oes}\label{sec:lim}
 O simulador n\~ao tem roteamento nem tempo de viagem, e o estudo usa um \'unico ve\'iculo; os resultados n\~ao se estendem a frotas ou a rotas reais. A
 ocupa\c{c}\~ao inicial dos dias reais \'e desconhecida, e o modelo de Poisson superestima a dificuldade em 30--40\% em rela\c{c}\~ao aos dias reais. O
-\emph{rollout} usa o modelo verdadeiro. O A2C \'e uma adapta\c{c}\~ao; a escolha de suas configura\c{c}\~oes usa apenas duas sementes de ajuste. A sensibilidade usa 5 sementes (10 nas duas variantes de 12 esta\c{c}\~oes em que a conclus\~ao mudou) e n\~ao reajusta os aprendizes, exceto o DQN nessas duas variantes. O DQN foi testado com at\'e o qu\'adruplo do or\c{c}amento de treino; as inst\^ancias de 20 e 30 esta\c{c}\~oes usam a configura\c{c}\~ao de 12 esta\c{c}\~oes e um \emph{rollout} sem ajuste em 300 cen\'arios, e as heur\'isticas e o \emph{rollout} usam as grades de calibra\c{c}\~ao descritas. O teto de lote (\emph{batch}) de 256 do DQN \'e imposto por custo; uma verifica\c{c}\~ao com 512 e duas sementes n\~ao mostrou ganho consistente, mas n\~ao exclui um ganho pequeno com 12 esta\c{c}\~oes. Nenhuma
+\emph{rollout} usa o modelo verdadeiro. O A2C \'e uma adapta\c{c}\~ao; a escolha de suas configura\c{c}\~oes usa apenas duas sementes de ajuste. A sensibilidade usa 5 sementes (10 nas duas variantes de 12 esta\c{c}\~oes em que a conclus\~ao mudou) e n\~ao reajusta os aprendizes, exceto o DQN nessas duas variantes. O DQN foi testado com at\'e o qu\'adruplo do or\c{c}amento de treino; as inst\^ancias de 20 e 30 esta\c{c}\~oes usam a configura\c{c}\~ao de 12 esta\c{c}\~oes e um \emph{rollout} sem ajuste em 300 cen\'arios, e a pol\'itica dupla e as redes largas n\~ao foram ajustadas por hiperpar\^ametros pr\'oprios, e as heur\'isticas e o \emph{rollout} usam as grades de calibra\c{c}\~ao descritas. O teto de lote (\emph{batch}) de 256 do DQN \'e imposto por custo; uma verifica\c{c}\~ao com 512 e duas sementes n\~ao mostrou ganho consistente, mas n\~ao exclui um ganho pequeno com 12 esta\c{c}\~oes. Nenhuma
 das conclus\~oes foi validada em dados brasileiros ainda. Os resultados preliminares que eram nossa base de partida tinham defeitos (uma semente, escolha
 e teste na mesma amostra, heur\'isticas n\~ao calibradas, DQN mal treinado); n\~ao os usamos.
 
@@ -252,8 +271,8 @@ e teste na mesma amostra, heur\'isticas n\~ao calibradas, DQN mal treinado); n\~
 Em inst\^ancias calibradas com viagens reais, uma rede neural com DQN reduz a demanda perdida em \redA\%, \redB\% e \redC\% (4, 8 e 12 esta\c{c}\~oes) em rela\c{c}\~ao a uma heur\'istica
 bem calibrada, e o resultado se mant\'em em dias reais; por\'em, um planejador com o modelo verdadeiro o supera no teste sint\'etico com
 12 esta\c{c}\~oes (com 8 esta\c{c}\~oes s\'o no or\c{c}amento de 500 mil passos; com 20 e 30, nos dois or\c{c}amentos), e a vantagem n\~ao \'e robusta a demanda baixa com 12 esta\c{c}\~oes. O \emph{replay} \'e o \'unico componente comprovadamente
-necess\'ario, representa\c{c}\~oes simples n\~ao bastam, e a vantagem relativa do DQN diminui com o n\'umero de esta\c{c}\~oes (de \scRedFiveA\% com 4 a \scRedFiveE\% com 30, sem reajuste). Trabalhos futuros: roteamento e frota, o estudo de caso com dados brasileiros
-(\pend{Tembici}) e um baseline de planejamento mais forte (mais futuros e horizonte maiores).
+necess\'ario, representa\c{c}\~oes simples n\~ao bastam, e a vantagem relativa do DQN diminui com o n\'umero de esta\c{c}\~oes (de \scRedFiveA\% com 4 a \scRedFiveE\% com 30, sem reajuste); uma pol\'itica dupla (invent\'ario e roteamento) atenua a queda, sem elimin\'a-la. Trabalhos futuros: roteamento e frota, o estudo de caso com dados brasileiros
+(a coleta GBFS da Tembici foi encerrada com uma \'unica semana completa) e um baseline de planejamento mais forte (mais futuros e horizonte maiores).
 
 \bibliographystyle{plainnat}
 \bibliography{refs}

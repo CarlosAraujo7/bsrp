@@ -241,5 +241,84 @@ class TestScaleRollout(unittest.TestCase):
         self.assertNotIn("rollout", P8.scale_data(self.tmp, scales=("cb20wd",))["cb20wd"])
 
 
+class TestArchData(unittest.TestCase):
+    """P10: DQN com rede larga × 64–64 (Welch) e × rollout (subconjunto de cenários em 30 est.)."""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._td.name)
+        t = self.tmp
+        inst = "cb30wd"
+        rng = np.random.default_rng(8)
+        dump(t / f"heuristics_scale_{inst}.jsonl", [
+            {"instance": inst, "method": "stay", "test_mean": -470.0, "test_rewards": [-470.0] * 1000},
+            {"instance": inst, "method": "greedy_cal", "policy": "g", "val_table": {"c": -380.0}, "test_mean": -380.0, "test_rewards": [-380.0] * 1000}])
+        dump(t / f"scale_{inst}.jsonl", [{"method": "dqn", "seed": s, "test_mean": float(-340 + rng.normal(0, 1)), "test_rewards": [-340.0] * 1000} for s in range(5)])
+        dump(t / f"rollout_scale_{inst}.jsonl", [{"instance": inst, "set": "test", "idx": k, "reward": -300.0} for k in range(300)]
+             + [{"instance": inst, "set": "real_test", "idx": k, "reward": -290.0} for k in range(24)])
+        dump(t / f"arch_h128_{inst}.jsonl", [{"method": "dqn", "seed": s, "test_mean": float(-330 + rng.normal(0, 1)), "test_rewards": [-330.0] * 1000, "train_seconds": 100.0} for s in range(5)])
+        dump(t / f"arch_h256_{inst}.jsonl", [{"method": "dqn", "seed": s, "test_mean": float(-345 + rng.normal(0, 1)), "test_rewards": [-345.0] * 1000, "train_seconds": 200.0} for s in range(5)])
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def test_delta_vs_64_64_and_vs_rollout_on_the_subset_and_the_reading(self):
+        d = P8.arch_data(self.tmp, insts=("cb30wd",))["cb30wd"]
+        wide, wider = d["Wide"], d["Wider"]
+        self.assertAlmostEqual(wide["delta"], 10.0, delta=2.0)                  # 128–128 melhora ~10 de demanda perdida vs 64–64 (reward: positivo)
+        self.assertGreater(wide["delta_lo"], 0)
+        self.assertLess(wider["delta_hi"], 0)                                   # 256–256 piora
+        self.assertAlmostEqual(wide["vs_roll"], -330.0 - (-300.0), delta=2.0)   # DQN − rollout em reward: negativo = rollout melhor
+        self.assertEqual(d["rollout_subset"], 300)
+        txt = "\n".join(P8.arch_section(self.tmp))
+        self.assertIn("a capacidade da rede limita o DQN", txt)
+        self.assertIn("a rede maior piora", txt)
+
+    def test_pending_without_arch_rows(self):
+        (self.tmp / "arch_h256_cb30wd.jsonl").unlink()
+        d = P8.arch_data(self.tmp, insts=("cb30wd",))["cb30wd"]
+        self.assertIn("Wide", d)
+        self.assertNotIn("Wider", d)
+        self.assertIn("(pendente)", "\n".join(P8.arch_section(self.tmp)))
+
+
+class TestDprlData(unittest.TestCase):
+    """P11: adaptação do DPRL × DQN plano (Welch), × heurística e × rollout (subconjunto em 30 est.)."""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._td.name)
+        t = self.tmp
+        inst = "cb30wd"
+        rng = np.random.default_rng(9)
+        dump(t / f"heuristics_scale_{inst}.jsonl", [
+            {"instance": inst, "method": "stay", "test_mean": -470.0, "test_rewards": [-470.0] * 1000},
+            {"instance": inst, "method": "greedy_cal", "policy": "g", "val_table": {"c": -380.0}, "test_mean": -380.0, "test_rewards": [-380.0] * 1000}])
+        dump(t / f"scale_{inst}.jsonl", [{"method": "dqn", "seed": s, "test_mean": float(-340 + rng.normal(0, 1)), "test_rewards": [-340.0] * 1000} for s in range(5)])
+        dump(t / f"rollout_scale_{inst}.jsonl", [{"instance": inst, "set": "test", "idx": k, "reward": -300.0} for k in range(300)]
+             + [{"instance": inst, "set": "real_test", "idx": k, "reward": -290.0} for k in range(24)])
+        dump(t / f"dprl_{inst}.jsonl", [{"method": "dprl", "seed": s, "test_mean": float(-320 + rng.normal(0, 1)), "test_rewards": [-320.0] * 1000, "train_seconds": 90.0} for s in range(5)])
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def test_dual_vs_flat_welch_reduction_and_vs_rollout_on_the_subset(self):
+        d = P8.dprl_data(self.tmp, scales=("cb30wd",))["cb30wd"]
+        self.assertAlmostEqual(d["delta"], 20.0, delta=2.0)                     # dual melhora ~20 de demanda perdida vs plano (reward positivo)
+        self.assertGreater(d["delta_lo"], 0)
+        self.assertAlmostEqual(d["red"], 100 * (380 - 320) / 380, delta=0.5)
+        self.assertAlmostEqual(d["flat_red"], 100 * (380 - 340) / 380, delta=0.5)
+        self.assertAlmostEqual(d["vs_roll"], -320.0 - (-300.0), delta=1.0)      # dual − rollout em reward: negativo = rollout melhor
+        txt = "\n".join(P8.dprl_section(self.tmp))
+        self.assertIn("a fatoração em duas políticas melhora o DQN", txt)
+
+    def test_worse_and_tie_readings_and_pending(self):
+        dump(self.tmp / "dprl_cb30wd.jsonl", [{"method": "dprl", "seed": s, "test_mean": -360.0 + 0.1 * s, "test_rewards": [-360.0] * 1000} for s in range(5)])
+        self.assertIn("piora o DQN", "\n".join(P8.dprl_section(self.tmp)))
+        dump(self.tmp / "dprl_cb30wd.jsonl", [{"method": "dprl", "seed": 0, "test_mean": -340.0, "test_rewards": [-340.0] * 1000}])
+        self.assertEqual(P8.dprl_data(self.tmp, scales=("cb30wd",)), {})                 # menos de 2 sementes
+        self.assertIn("(pendente)", "\n".join(P8.dprl_section(self.tmp)))
+
+
 if __name__ == "__main__":
     unittest.main()
