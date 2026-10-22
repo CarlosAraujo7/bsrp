@@ -30,3 +30,15 @@ artigo/*.fls
 artigo/*.fdb_latexmk
 artigo/*.synctex.gz
 artigo/main.pdf
+
+# artigo do CEC: artefatos de compilacao LaTeX (o PDF final fica fora do repo: duplo-anonimo, versao de trabalho)
+artigo_cec/*.aux
+artigo_cec/*.log
+artigo_cec/*.bbl
+artigo_cec/*.blg
+artigo_cec/*.out
+artigo_cec/*.toc
+artigo_cec/*.fls
+artigo_cec/*.fdb_latexmk
+artigo_cec/*.synctex.gz
+artigo_cec/main.pdf

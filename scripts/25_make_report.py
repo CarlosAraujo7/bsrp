@@ -45,9 +45,14 @@ INK, INK2, MUTED, GRID, AXIS = "#0b0b0b", "#52514e", "#898781", "#e1e0d9", "#c3c
 POS, NEG = "#2a78d6", "#e34948"
 
 
+LANG = "pt"                                   # "en": ponto decimal e saída em artigo_cec/ (artigo do IEEE CEC)
+OUT = ROOT / "artigo"
+
+
 def pt(x, d=1):
-    """número com vírgula decimal."""
-    return f"{x:.{d}f}".replace(".", ",")
+    """número com vírgula decimal (pt) ou ponto (en)."""
+    s = f"{x:.{d}f}"
+    return s.replace(".", ",") if LANG == "pt" else s
 
 
 def tex_num(s: str) -> str:
@@ -388,7 +393,7 @@ def mean_ci(x):
 
 
 def write_tables_and_macros(R, A, S, root, runs):
-    tdir = root / "artigo" / "tabelas"
+    tdir = OUT / "tabelas"
     tdir.mkdir(parents=True, exist_ok=True)
     mac = {}
     for b in BASES:
@@ -522,7 +527,7 @@ def write_tables_and_macros(R, A, S, root, runs):
     same = len(set(cfgs.values())) == 1
     h0, k0 = cfgs["cb4wd"]
     mac["rollCfg"] = (f"$h={h0}$ e $K={k0}$ nas tr\\^es escalas" if same else "; ".join(f"$h={cfgs[b][0]}$, $K={cfgs[b][1]}$ com {NST[b]} esta\\c{{c}}\\~oes" for b in BASES))
-    with open(root / "artigo" / "numeros.tex", "w", encoding="utf-8") as f:
+    with open(OUT / "numeros.tex", "w", encoding="utf-8") as f:
         f.write("% GERADO por scripts/25_make_report.py — não editar. Sufixos A/B/C = 4/8/12 estações. Requer \\usepackage{xspace}.\n")
         for k, v in mac.items():
             f.write(f"\\newcommand{{\\{k}}}{{{tex_num(v)}\\xspace}}\n")
@@ -755,29 +760,325 @@ def check_claims(R, A, S):
                 "P3b: o reajuste não altera detectavelmente o DQN (IC de Welch inclui 0) nas duas variantes"))
     return out
 
+CEC_KEY = {"stay": "Stay", "heur": "Ref", "grid": "Grid", "cma": "Cma", "rollout": "Roll", "rhea_s": "RheaS", "rhea_l": "RheaL", "dqn": "Dqn", "dqn2m": "DqnX", "dprl": "Dprl", "es": "Es", "es2m": "EsX"}
+CEC_COL = {"stay": "#898781", "heur": "#52514e", "cma": "#7c7b75", "rollout": "#eb6834", "rhea_s": "#f2a07d", "rhea_l": "#c24e1d", "dqn": "#2a78d6", "dqn2m": "#7fb2ee",
+           "dprl": "#8d5a2b", "es": "#4a3aa7", "es2m": "#9085e9"}
+
+
+def cec_cell(r, key="mean", hw=True):
+    if r is None:
+        return "--"
+    if r["kind"] == "det" or not hw:
+        return pt(r[key], 1)
+    return f"{pt(r[key], 1)}$\\pm${pt((r['hi'] - r['lo']) / 2, 1)}" if key == "mean" else pt(r[key], 1)
+
+
+BUD_KEY = {"500k": "Fiveh", "2M": "Two", "8M": "Eight", "32M": "Thirtytwo"}
+ES_TICKS = {"500k": 5e5, "2M": 2e6, "8M": 8e6, "32M": 3.2e7}
+SCALE_LETTER = {"cb4wd": "A", "cb8wd": "B", "cb12wd": "C", "cb20wd": "D", "cb30wd": "E"}
+
+
+def cec_evo_outputs(runs, tdir, root):
+    """Resultados dos mÃ©todos evolutivos (P12b calibraÃ§Ã£o CMA-ES Ã— grade, P12c RHEA Ã— rollout, P12d curva de orÃ§amento do ES): macros, 3 tabelas e fig_cec_es_budget."""
+    mac = {}
+    cal, bud, rh = AN30.cec_calibration(runs), AN30.cec_es_budget(runs), AN30.cec_rhea_vs_rollout(runs)
+    with open(tdir / "cec_calib.tex", "w", encoding="utf-8") as f:
+        f.write("\\begin{tabular}{lrrrl}\n\\toprule\nStations & Grid & CMA-ES (mean$\\pm$CI) & Grid$-$CMA-ES [95\\% CI] & Reading \\\\\n\\midrule\n")
+        for inst, c in cal.items():
+            L = SCALE_LETTER[inst]
+            hw = (c["cma_hi"] - c["cma_lo"]) / 2
+            mac[f"cecCalGrid{L}"], mac[f"cecCalCma{L}"], mac[f"cecCalCmaHw{L}"] = pt(c["grid_test"], 2), pt(c["cma_test"], 2), pt(hw, 2)
+            mac[f"cecCalDelta{L}"], mac[f"cecCalLo{L}"], mac[f"cecCalHi{L}"] = pt(c["delta"], 2), pt(c["lo"], 2), pt(c["hi"], 2)
+            mac[f"cecCalGridVal{L}"], mac[f"cecCalCmaVal{L}"] = pt(c["grid_val"], 2), pt(c["cma_val"], 2)
+            mac[f"cecCalN{L}"] = str(c["n"])
+            f.write(tex_num(f"{c['n_st']} & {pt(c['grid_test'], 2)} & {pt(c['cma_test'], 2)}$\\pm${pt(hw, 2)} & {pt(c['delta'], 2)} [{pt(c['lo'], 2)}; {pt(c['hi'], 2)}] & {c['verdict']} \\\\\n"))
+        f.write("\\bottomrule\n\\end{tabular}\n")
+    for inst, r in AN30.cec_data(runs).items():
+        mac_src = "CMA-ES" if r["heur"].get("src") == "cma" else "grid"
+        mac[f"cecRefSrc{SCALE_LETTER[inst]}"] = mac_src
+    with open(tdir / "cec_esbudget.tex", "w", encoding="utf-8") as f:
+        tags = ["500k", "2M", "8M", "32M"]
+        f.write("\\begin{tabular}{lrrrrr}\n\\toprule\nStations & DQN 500k & ES 500k & ES 2M & ES 8M & ES 32M \\\\\n\\midrule\n")
+        for inst, b in bud.items():
+            L = SCALE_LETTER[inst]
+            cells = [pt(b["dqn"], 1)]
+            mac[f"cecBudDqn{L}"], mac[f"cecBudRef{L}"] = pt(b["dqn"], 1), pt(b["heur"], 1)
+            for tg in tags:
+                x = b["budgets"].get(tg)
+                if x is None:
+                    cells.append("--")
+                    continue
+                k = BUD_KEY[tg]
+                hw = (x["hi"] - x["lo"]) / 2
+                mac[f"cecBud{k}{L}"], mac[f"cecBud{k}Hw{L}"], mac[f"cecBud{k}N{L}"] = pt(x["mean"], 1), pt(hw, 1), str(x["n"])
+                mac[f"cecBud{k}H{L}"], mac[f"cecBud{k}HLo{L}"], mac[f"cecBud{k}HHi{L}"] = pt(x["vs_heur"], 1), pt(x["vs_heur_lo"], 1), pt(x["vs_heur_hi"], 1)
+                if "vs_dqn" in x:
+                    mac[f"cecBud{k}Vs{L}"], mac[f"cecBud{k}VsLo{L}"], mac[f"cecBud{k}VsHi{L}"] = pt(x["vs_dqn"], 1), pt(x["vs_dqn_lo"], 1), pt(x["vs_dqn_hi"], 1)
+                cells.append(f"{pt(x['mean'], 1)}$\\pm${pt(hw, 1)}")
+            mac[f"cecBudReached{L}"] = b["reached"] if b["reached"] else "none"
+            f.write(f"{b['n_st']} & " + " & ".join(cells) + " \\\\\n")
+        f.write("\\bottomrule\n\\end{tabular}\n")
+    with open(tdir / "cec_rhea.tex", "w", encoding="utf-8") as f:
+        f.write("\\begin{tabular}{lrrr}\n\\toprule\nStations & Rollout & RHEA-S$-$rollout [95\\% CI] & RHEA-L$-$rollout [95\\% CI] \\\\\n\\midrule\n")
+        for inst, r in rh.items():
+            L = SCALE_LETTER[inst]
+            mac[f"cecRhRoll{L}"] = pt(r["rollout"], 1)
+            cells = []
+            for cfg in ("S", "L"):
+                x = r.get(cfg)
+                if x is None:
+                    cells.append("--")
+                    continue
+                mac[f"cecRh{cfg}Delta{L}"], mac[f"cecRh{cfg}Lo{L}"], mac[f"cecRh{cfg}Hi{L}"] = pt(-x["delta"], 1), pt(-x["hi"], 1), pt(-x["lo"], 1)
+                cells.append(f"{pt(-x['delta'], 1)} [{pt(-x['hi'], 1)}; {pt(-x['lo'], 1)}]")
+            f.write(tex_num(f"{AN30.N_ST[inst]} & {pt(r['rollout'], 1)} & " + " & ".join(cells) + " \\\\\n"))
+        f.write("\\bottomrule\n\\end{tabular}\n")
+    cp = Path(runs) / "cost_steps.json"
+    if cp.exists():
+        cs = json.loads(cp.read_text(encoding="utf-8"))
+        for inst, L in SCALE_LETTER.items():
+            if inst in cs:
+                for tag, k in (("rollout", "Roll"), ("rhea_s", "RheaS"), ("rhea_l", "RheaL")):
+                    mac[f"cecCost{k}{L}"] = pt(cs[inst][tag]["model_steps_per_decision"] / 1000, 1)
+                    mac[f"cecMs{k}{L}"] = pt(cs[inst][tag]["ms_per_decision"], 0)
+    if cal:
+        mac["cecCalMaxAbs"] = pt(max(abs(c["delta"]) for c in cal.values()), 2)
+    sel = [i for i in ("cb4wd", "cb12wd", "cb30wd") if i in bud and len(bud[i]["budgets"]) >= 2]
+    if sel:
+        fig, axes = plt.subplots(1, len(sel), figsize=(7.2, 2.3), sharey=False)
+        axes = np.atleast_1d(axes)
+        for ax, inst in zip(axes, sel):
+            b = bud[inst]
+            xs = [b["budgets"][tg]["steps"] for tg in b["budgets"]]
+            ys = [b["budgets"][tg]["mean"] for tg in b["budgets"]]
+            es_ = [(b["budgets"][tg]["hi"] - b["budgets"][tg]["lo"]) / 2 for tg in b["budgets"]]
+            ax.errorbar(xs, ys, yerr=es_, color=CEC_COL["es"], marker="o", ms=3.2, lw=1.1, capsize=1.5, label="ES")
+            ax.axhline(b["dqn"], color=CEC_COL["dqn"], lw=1.0, ls="--", label="DQN (500k)")
+            ax.axhline(b["heur"], color=CEC_COL["heur"], lw=1.0, ls=":", label="reference heuristic")
+            ax.set_xscale("log")
+            ax.set_xticks([ES_TICKS[k] for k in ES_TICKS])
+            ax.set_xticklabels(list(ES_TICKS))
+            ax.minorticks_off()
+            ax.set_xlabel("simulator steps")
+            ax.set_title(f"{b['n_st']} stations", loc="left")
+            ax.yaxis.grid(True, color=GRID, lw=0.5)
+            ax.set_axisbelow(True)
+        axes[0].set_ylabel("unmet demand per day")
+        h, lb = axes[0].get_legend_handles_labels()
+        fig.legend(h, lb, ncol=3, loc="upper center", bbox_to_anchor=(0.5, 0.0), frameon=False, fontsize=6.5)
+        fig.tight_layout()
+        figdir = root / "figuras_en"
+        figdir.mkdir(exist_ok=True)
+        for ext in ("pdf", "png"):
+            fig.savefig(figdir / f"fig_cec_es_budget.{ext}", bbox_inches="tight")
+        plt.close(fig)
+    return mac
+
+
+def check_claims_cec(runs):
+    """Afirmações QUALITATIVAS do artigo do CEC (artigo_cec/main.tex) confrontadas com os dados; ALERTA = texto desatualizado."""
+    out = []
+    D, C = AN30.cec_data(runs), AN30.cec_contrasts(runs)
+    cal, bud, rh = AN30.cec_calibration(runs), AN30.cec_es_budget(runs), AN30.cec_rhea_vs_rollout(runs)
+    S = [i for i in AN30.SCALES if i in D and i in C]
+    out.append((len(S) == 5, "CEC: as 5 escalas têm dados"))
+    for tag, key in (("DQN 500 mil", "dqn"), ("DQN 2 M", "dqn2m")):
+        reds = [D[i][key]["red"] for i in S]
+        out.append((all(a > b for a, b in zip(reds, reds[1:])), f"CEC: a redução do {tag} vs a referência cai monotonicamente com a escala"))
+    rr = [D[i]["rollout"]["red"] for i in S]
+    out.append((all(a > b for a, b in zip(rr, rr[1:])), "CEC: a redução do rollout cai monotonicamente com a escala"))
+    out.append((all(C[i]["dqn_vs_heur"]["lo"] > 0 for i in S), "CEC: o IC de DQN − referência exclui 0 nas 5 escalas"))
+    want = {"cb4wd": "dqn", "cb8wd": "rollout", "cb12wd": "rollout", "cb20wd": "rollout", "cb30wd": "rollout"}
+    for i in S:
+        c = C[i]["dqn_vs_rollout"]
+        got = "dqn" if c["lo"] > 0 else ("rollout" if c["hi"] < 0 else "empate")
+        out.append((got == want[i], f"CEC {i}: DQN × rollout = {got} (texto: {want[i]})"))
+    if "cb8wd" in C and "dqn2m_vs_rollout" in C["cb8wd"]:
+        c = C["cb8wd"]["dqn2m_vs_rollout"]
+        out.append((c["lo"] <= 0 <= c["hi"], "CEC cb8wd: DQN com 4× o orçamento empata com o rollout"))
+    wd = {"cb4wd": "empate", "cb8wd": "dprl", "cb12wd": "dprl", "cb20wd": "dprl", "cb30wd": "empate"}
+    for i in S:
+        c = C[i]["dprl_vs_dqn"]
+        got = "dprl" if c["lo"] > 0 else ("dqn" if c["hi"] < 0 else "empate")
+        out.append((got == wd[i], f"CEC {i}: dual × DQN plano = {got} (texto: {wd[i]})"))
+    wr = {"cb4wd": "dprl", "cb8wd": "dprl", "cb12wd": "empate", "cb20wd": "rollout", "cb30wd": "rollout"}
+    for i in S:
+        c = C[i]["dprl_vs_rollout"]
+        got = "dprl" if c["lo"] > 0 else ("rollout" if c["hi"] < 0 else "empate")
+        out.append((got == wr[i], f"CEC {i}: dual × rollout = {got} (texto: {wr[i]})"))
+    wv = {"cb4wd": "equivalent", "cb8wd": "better", "cb12wd": "better", "cb20wd": "inconclusive", "cb30wd": "equivalent"}
+    for i in S:
+        if i in cal:
+            out.append((cal[i]["verdict"] == wv[i], f"CEC {i}: CMA-ES × grade = {cal[i]['verdict']} (texto: {wv[i]})"))
+    out.append((all(abs(c["delta"]) / c["grid_test"] < 0.01 for c in cal.values()), "CEC: |grade − CMA-ES| < 1% da demanda perdida da heurística em todas as escalas"))
+    out.append((all(D[i]["heur"].get("src") == "cma" for i in S), "CEC: a melhor heurística por validação é uma solução do CMA-ES em todas as escalas"))
+    out.append((all(C[i]["es_vs_heur"]["hi"] < 0 for i in S), "CEC: o ES (500 mil passos) é pior que a heurística de referência nas 5 escalas"))
+    out.append((all(C[i]["es_vs_dqn"]["hi"] < 0 for i in S), "CEC: o ES é pior que o DQN nas 5 escalas"))
+    for i in ("cb12wd", "cb20wd", "cb30wd"):
+        c = C[i].get("dqn2m_vs_rollout")
+        out.append((c is not None and c["hi"] < 0, f"CEC {i}: o DQN com 4× o orçamento continua atrás do rollout (IC exclui 0)"))
+    for i in ("cb4wd", "cb12wd", "cb30wd"):
+        b_ = bud.get(i, {}).get("budgets", {})
+        out.append((all(k in b_ for k in ("500k", "2M", "8M", "32M")), f"CEC {i}: o ES tem os 4 orçamentos (500k, 2M, 8M, 32M)"))
+    for i in ("cb12wd", "cb30wd"):
+        b_ = bud.get(i, {}).get("budgets", {})
+        out.append((all(x["vs_dqn_hi"] < 0 for x in b_.values()) and bool(b_), f"CEC {i}: o ES não alcança o DQN (500 mil) em nenhum orçamento até 32M (IC de ES − DQN exclui 0)"))
+    b4 = bud.get("cb4wd", {}).get("budgets", {})
+    out.append(("32M" in b4 and b4["32M"]["vs_dqn_lo"] <= 0 <= b4["32M"]["vs_dqn_hi"] and b4["8M"]["vs_dqn_hi"] < 0 and bud["cb4wd"]["reached"] == "32M",
+                "CEC cb4wd: o IC de ES − DQN só inclui 0 em 32M (3 sementes, IC largo); em 8M ainda exclui"))
+    hv = {"cb4wd": "empate", "cb12wd": "heur", "cb30wd": "empate"}
+    for i in ("cb4wd", "cb12wd", "cb30wd"):
+        x = bud.get(i, {}).get("budgets", {}).get("32M")
+        got = None if x is None else ("es" if x["vs_heur_lo"] > 0 else ("heur" if x["vs_heur_hi"] < 0 else "empate"))
+        out.append((got == hv[i], f"CEC {i}: ES (32M) × heurística de referência = {got} (texto: {hv[i]})"))
+    out.append((all(bud[i]["budgets"]["32M"]["mean"] < bud[i]["budgets"]["500k"]["mean"] for i in ("cb4wd", "cb12wd", "cb30wd") if i in bud), "CEC: o ES com 32M tem demanda perdida menor que com 500k (4, 12, 30 est.)"))
+    rv = {"S": {"cb4wd": "rhea", "cb8wd": "rollout", "cb12wd": "rollout", "cb20wd": "rollout", "cb30wd": "rollout"},
+          "L": {"cb4wd": "rhea", "cb8wd": "empate", "cb12wd": "rollout", "cb20wd": "rollout", "cb30wd": "rollout"}}
+    for cfg in ("S", "L"):
+        for i in S:
+            x = rh.get(i, {}).get(cfg)
+            if x is None:
+                out.append((False, f"CEC {i}: RHEA-{cfg} × rollout sem dados"))
+                continue
+            got = "rhea" if x["lo"] > 0 else ("rollout" if x["hi"] < 0 else "empate")
+            out.append((got == rv[cfg][i], f"CEC {i}: RHEA-{cfg} × rollout = {got} (texto: {rv[cfg][i]})"))
+    out.append((all(C[i]["dqn_vs_rhea_l"]["hi"] < 0 for i in S if "dqn_vs_rhea_l" in C[i]) and all("dqn_vs_rhea_l" in C[i] for i in S),
+                "CEC: o RHEA-L é melhor que o DQN (500 mil passos) nas 5 escalas (IC exclui 0)"))
+    wl = {"cb4wd": "rhea", "cb8wd": "empate", "cb12wd": "empate", "cb20wd": "dqn2m", "cb30wd": "empate"}
+    for i in S:
+        c = C[i].get("dqn2m_vs_rhea_l")
+        got = None if c is None else ("dqn2m" if c["lo"] > 0 else ("rhea" if c["hi"] < 0 else "empate"))
+        out.append((got == wl[i], f"CEC {i}: DQN 4× × RHEA-L = {got} (texto: {wl[i]})"))
+    cp = Path(runs) / "cost_steps.json"
+    if cp.exists():
+        cs = json.loads(cp.read_text(encoding="utf-8"))
+        ro = [cs[i]["rollout"]["model_steps_per_decision"] for i in AN30.SCALES]
+        out.append((all(a < b for a, b in zip(ro, ro[1:])), "CEC: o custo do rollout (passos de modelo por decisão) cresce com a escala"))
+        for tag in ("rhea_s", "rhea_l"):
+            v = [cs[i][tag]["model_steps_per_decision"] for i in AN30.SCALES]
+            out.append((max(v) / min(v) < 1.02, f"CEC: o custo do {tag} é praticamente constante na escala"))
+        out.append((cs["cb4wd"]["rollout"]["model_steps_per_decision"] < cs["cb4wd"]["rhea_l"]["model_steps_per_decision"]
+                    and cs["cb30wd"]["rhea_l"]["model_steps_per_decision"] < cs["cb30wd"]["rollout"]["model_steps_per_decision"], "CEC: o RHEA-L custa mais que o rollout em 4 est. e menos em 30 est."))
+    return out
+
+
+def write_cec(runs, root):
+    """Artefatos do artigo do CEC (inglês): tabelas, figura e macros cec*, a partir de AN30.cec_data/cec_contrasts (mesmos n primeiros cenários de teste em todos os métodos)."""
+    D, C = AN30.cec_data(runs), AN30.cec_contrasts(runs)
+    letters = {"cb4wd": "A", "cb8wd": "B", "cb12wd": "C", "cb20wd": "D", "cb30wd": "E"}
+    tdir = OUT / "tabelas"
+    tdir.mkdir(parents=True, exist_ok=True)
+    mac = {}
+    for inst, r in D.items():
+        L = letters[inst]
+        for m, x in r.items():
+            if m == "n_st":
+                continue
+            k = CEC_KEY[m]
+            mac[f"cecU{k}{L}"] = pt(x["mean"], 1)
+            mac[f"cecR{k}{L}"] = pt(x["red"], 0)
+            if x["kind"] == "seeds":
+                mac[f"cecUHw{k}{L}"] = pt((x["hi"] - x["lo"]) / 2, 1)
+                mac[f"cecRHw{k}{L}"] = pt((x["red_hi"] - x["red_lo"]) / 2, 0)
+            mac[f"cecReal{k}{L}"] = pt(x["real"], 1)
+    pair_name = lambda s: "".join(CEC_KEY.get(w, w.capitalize()) for w in s.split("_vs_"))
+    for inst, rows in C.items():
+        L = letters[inst]
+        for key, v in rows.items():
+            a, b = key.split("_vs_")
+            nm = f"{CEC_KEY.get(a, a)}Vs{CEC_KEY.get(b, b)}"
+            mac[f"cecC{nm}{L}"], mac[f"cecC{nm}Lo{L}"], mac[f"cecC{nm}Hi{L}"] = pt(v["delta"], 1), pt(v["lo"], 1), pt(v["hi"], 1)
+    mac["cecN"] = str(AN30.N_SUB)
+    mac.update(cec_evo_outputs(runs, tdir, root))
+    with open(OUT / "numeros_cec.tex", "w", encoding="utf-8") as f:
+        f.write("% GERADO por scripts/25_make_report.py --lang en. Macros cecU/cecR/cecC: demanda perdida, redução (%) e contrastes por escala (A..E = 4, 8, 12, 20, 30 estações).\n")
+        for k, v in mac.items():
+            f.write(f"\\newcommand{{\\{k}}}{{{tex_num(v)}\\xspace}}\n")
+    order = [m for m in AN30.CEC_METHODS if any(m in r for r in D.values())]
+    scales = [i for i in ("cb4wd", "cb8wd", "cb12wd", "cb20wd", "cb30wd") if i in D]
+    for fname, key, what in (("cec_unmet.tex", "mean", "mean"), ("cec_real.tex", "real", "real")):
+        with open(tdir / fname, "w", encoding="utf-8") as f:
+            f.write("\\begin{tabular}{l" + "r" * len(scales) + "}\n\\toprule\nMethod & " + " & ".join(f"{D[i]['n_st']} st." for i in scales) + " \\\\\n\\midrule\n")
+            for m in order:
+                cells = []
+                for i in scales:
+                    x = D[i].get(m)
+                    cells.append("--" if x is None else (pt(x["real"], 1) if key == "real" else cec_cell(x)))
+                f.write(f"{AN30.CEC_LABEL[m]} & " + " & ".join(cells) + " \\\\\n")
+            f.write("\\bottomrule\n\\end{tabular}\n")
+    # figura: redução vs heurística de grade, por escala; painel (a) teste sintético, (b) dias reais
+    fig, axes = plt.subplots(1, 2, figsize=(7.2, 2.6))
+    for ax, which in zip(axes, ("syn", "real")):
+        for m in order:
+            if m in ("stay", "heur"):
+                continue
+            pts = []
+            for i in scales:
+                x = D[i].get(m)
+                if x is None:
+                    continue
+                if which == "syn":
+                    pts.append((D[i]["n_st"], x["red"], (x["red_hi"] - x["red_lo"]) / 2 if x["kind"] == "seeds" else 0.0))
+                else:
+                    h = D[i]["heur"]["real"]
+                    pts.append((D[i]["n_st"], 100 * (h - x["real"]) / h if h else np.nan, 0.0))
+            if pts:
+                xs, ys, es = zip(*pts)
+                ax.errorbar(xs, ys, yerr=es, color=CEC_COL[m], lw=1.1, marker="o" if "2m" not in m and m != "dqn2m" else "s", ms=3.2, capsize=1.5, label=AN30.CEC_LABEL[m])
+        ax.axhline(0, color=AXIS, lw=0.8)
+        ax.set_xticks([D[i]["n_st"] for i in scales])
+        ax.set_xlabel("stations")
+        ax.set_title("(a) synthetic test" if which == "syn" else "(b) 24 real days", loc="left")
+        ax.yaxis.grid(True, color=GRID, lw=0.5)
+        ax.set_axisbelow(True)
+    axes[0].set_ylabel("reduction in unmet demand\nvs. reference heuristic (%)")
+    axes[1].legend(frameon=False, fontsize=5.5, loc="center left", bbox_to_anchor=(1.0, 0.5))
+    fig.tight_layout()
+    figdir = root / "figuras_en"
+    figdir.mkdir(exist_ok=True)
+    for ext in ("pdf", "png"):
+        fig.savefig(figdir / f"fig_cec_scale.{ext}", bbox_inches="tight")
+    plt.close(fig)
+    return mac
+
+
 def main():
+    global LANG, OUT
     ap = argparse.ArgumentParser()
+    ap.add_argument("--lang", choices=["pt", "en"], default="pt", help="en: artigo do IEEE CEC (ponto decimal; saída em artigo_cec/)")
     ap.add_argument("--runs-dir", default=str(ROOT / "runs"))
     a = ap.parse_args()
     runs = Path(a.runs_dir)
+    LANG = a.lang
+    if LANG == "en":
+        OUT = ROOT / "artigo_cec"
     setup_style()
     outdir = ROOT / "figuras"
-    (outdir / "dados").mkdir(parents=True, exist_ok=True)
+    if LANG == "pt":
+        (outdir / "dados").mkdir(parents=True, exist_ok=True)
+    OUT.mkdir(parents=True, exist_ok=True)
     R, A, S = collect(runs), ablation(runs), sensitivity(runs)
     S["rt"] = retuned(runs)
     S["p8"] = {**AN30.p8_data(runs), "p3c": AN30.p3c_data(runs), "reseed": AN30.reseed_data(runs), "scale": AN30.scale_data(runs), "scale_rt": AN30.scale_retuned_data(runs), "arch": AN30.arch_data(runs), "dprl": AN30.dprl_data(runs)}
-    fig_main(R, outdir)
-    fig_curves(R, outdir)
-    fig_pool(R, outdir)
-    fig_ablation(A, outdir)
-    fig_sensitivity(S, outdir)
-    if len(S["p8"]["scale"]) >= 4 and any("500k" in r for k, r in S["p8"]["scale"].items() if k in ("cb20wd", "cb30wd")):
-        fig_scale(S["p8"]["scale"], outdir, S["p8"].get("scale_rt"), S["p8"].get("dprl"))
+    if LANG == "pt":
+        fig_main(R, outdir)
+        fig_curves(R, outdir)
+        fig_pool(R, outdir)
+        fig_ablation(A, outdir)
+        fig_sensitivity(S, outdir)
+        if len(S["p8"]["scale"]) >= 4 and any("500k" in r for k, r in S["p8"]["scale"].items() if k in ("cb20wd", "cb30wd")):
+            fig_scale(S["p8"]["scale"], outdir, S["p8"].get("scale_rt"), S["p8"].get("dprl"))
     mac = write_tables_and_macros(R, A, S, ROOT, runs)
     for ok, msg in check_claims(R, A, S):
         print(("ok     " if ok else "ALERTA ") + msg)
-    write_results_md(R, A, S, ROOT)
-    print(f"figuras em {outdir}; {len(mac)} macros em artigo/numeros.tex; 06_resultados.md atualizado")
+    if LANG == "pt":
+        write_results_md(R, A, S, ROOT)
+        print(f"figuras em {outdir}; {len(mac)} macros em artigo/numeros.tex; 06_resultados.md atualizado")
+    else:
+        for ok, msg in check_claims_cec(runs):
+            print(("ok     " if ok else "ALERTA ") + msg)
+        mc = write_cec(runs, ROOT)
+        print(f"CEC: {len(mac)} macros em {OUT / 'numeros.tex'}; {len(mc)} macros cec em numeros_cec.tex; tabelas e fig_cec_scale em {OUT}")
 
 
 if __name__ == "__main__":

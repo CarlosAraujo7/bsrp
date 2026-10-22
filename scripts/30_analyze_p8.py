@@ -35,7 +35,7 @@ def reference_rows(runs, inst):
     """stay, heurística de referência (maior val entre as famílias, como em p4_report) e rollout de cabeçalho (maior val)."""
     runs = Path(runs)
     H = {}
-    for f in AN.P4_HEUR_FILES:
+    for f in list(AN.P4_HEUR_FILES) + sorted(q.name for q in runs.glob(f"heuristics_scale_{inst}.jsonl")):
         for r in rows_of(runs / f):
             if r["instance"] == inst:
                 H[r["method"]] = r
@@ -550,6 +550,229 @@ def dprl_section(runs):
     if not d:
         L.append("| (pendente) | | | | | | |")
     return L + [""]
+
+
+N_SUB = 300          # primeiros cenários de teste usados em TODAS as comparações do artigo do CEC (RHEA/rollout em 20/30 est. só têm 300)
+CEC_METHODS = ("stay", "heur", "cma", "rollout", "rhea_s", "rhea_l", "dqn", "dqn2m", "dprl", "es", "es2m")
+CEC_LABEL = {"stay": "Stay", "heur": "Reference heuristic", "grid": "Grid-calibrated heuristic", "cma": "CMA-ES heuristic", "rollout": "MC rollout", "rhea_s": "RHEA-S", "rhea_l": "RHEA-L",
+             "dqn": "DQN", "dqn2m": "DQN (4x budget)", "dprl": "Dual-policy (DPRL-style)", "es": "ES (neuroevolution)", "es2m": "ES (4x budget)"}
+
+
+def _sub_means(rows, n):
+    """média por linha (semente) dos n primeiros cenários de teste e dos dias reais; ignora linhas sem test_rewards."""
+    t = np.array([float(np.mean(r["test_rewards"][:n])) for r in rows if "test_rewards" in r])
+    real = np.array([r["real_test_mean"] for r in rows if "real_test_mean" in r], float)
+    return t, real
+
+
+def _episode_rows(path, cfg=None):
+    """{(conjunto, índice): recompensa} de um arquivo por episódio (rollout_scale / rhea), opcionalmente filtrando a config."""
+    out = {}
+    for r in rows_of(path):
+        if cfg is None or r.get("config") == cfg:
+            out[(r["set"], r["idx"])] = r["reward"]
+    return out
+
+
+def cec_reference(runs, inst):
+    """P12b (DESVIOS.md 2026-10-22): referência de heurística = a melhor por VALIDAÇÃO entre a de grade e as execuções do CMA-ES (o teste não entra na escolha).
+    Retorna (stay, grade, referência, origem 'grid'|'cma'); a linha é a do arquivo (test_rewards, real_test_mean...)."""
+    runs = Path(runs)
+    stay, grid, _ = reference_rows(runs, inst)
+    if grid is None:
+        return stay, None, None, None
+    gval = max(grid["val_table"].values())
+    cm = rows_of(runs / f"cmaes_{inst}.jsonl")
+    best = max(cm, key=lambda r: r["val_best"]) if cm else None
+    if best is not None and best["val_best"] > gval:
+        return stay, grid, best, "cma"
+    return stay, grid, grid, "grid"
+
+
+def cec_data(runs, scales=SCALES, n=N_SUB):
+    """Tabela única do artigo do CEC: todos os métodos nos n primeiros cenários de teste e nos 24 dias reais, por escala. Demanda perdida POSITIVA.
+    Cada método: {kind: 'seeds'|'det', n, mean, lo, hi, red, red_lo, red_hi, real}. `red` = redução vs a heurística de grade de referência (%).
+    Aprendizes: unidade = semente; determinísticos (heurística, rollout, RHEA): um valor por escala; 'cma' = por execução do CMA-ES (melhor família por validação)."""
+    runs = Path(runs)
+    out = {}
+    for inst in scales:
+        stay, grid, heur, src = cec_reference(runs, inst)
+        if stay is None or heur is None:
+            continue
+        ro = reference_rows(runs, inst)[2]
+        hs = float(np.mean(heur["test_rewards"][:n]))                        # reward (negativo) da heurística de referência no subconjunto
+        res = {"n_st": N_ST[inst]}
+
+        def det(name, test_vals, real_mean=None):
+            m = float(np.mean(test_vals))
+            res[name] = {"kind": "det", "n": 1, "mean": -m, "red": 100 * (hs - m) / hs, "real": -real_mean if real_mean is not None else float("nan"), "sub": len(test_vals)}
+
+        def seeds(name, rows):
+            t, real = _sub_means(rows, n)
+            if len(t) < 2:
+                return
+            lo, hi = ci_t(t)
+            red = 100 * (hs - t) / hs
+            rlo, rhi = ci_t(red)
+            res[name] = {"kind": "seeds", "n": len(t), "mean": -float(t.mean()), "lo": -float(hi), "hi": -float(lo), "red": float(red.mean()), "red_lo": float(rlo), "red_hi": float(rhi),
+                         "real": -float(real.mean()) if len(real) else float("nan")}
+
+        det("stay", stay["test_rewards"][:n], stay.get("real_test_mean"))
+        det("heur", heur["test_rewards"][:n], heur.get("real_test_mean"))
+        res["heur"]["src"] = src
+        det("grid", grid["test_rewards"][:n], grid.get("real_test_mean"))
+        # CMA-ES: por execução (semente), a família com melhor validação
+        cm = rows_of(runs / f"cmaes_{inst}.jsonl")
+        by = {}
+        for r in cm:
+            by.setdefault(r["seed"], {})[r["family"]] = r
+        sel = [max(d.values(), key=lambda r: r["val_best"]) for d in by.values() if len(d) == 2]
+        if len(sel) >= 2:
+            seeds("cma", sel)
+        # rollout
+        if inst in ("cb4wd", "cb8wd", "cb12wd") and ro is not None:
+            det("rollout", ro["test_rewards"][:n], ro.get("real_test_mean"))
+        else:
+            ep = _episode_rows(runs / f"rollout_scale_{inst}.jsonl")
+            if all(("test", k) in ep for k in range(n)) and all(("real_test", k) in ep for k in range(24)):
+                det("rollout", [ep[("test", k)] for k in range(n)], float(np.mean([ep[("real_test", k)] for k in range(24)])))
+        # RHEA
+        for cfg, name in (("S", "rhea_s"), ("L", "rhea_l")):
+            ep = _episode_rows(runs / f"rhea_{inst}.jsonl", cfg)
+            if all(("test", k) in ep for k in range(n)) and all(("real_test", k) in ep for k in range(24)):
+                det(name, [ep[("test", k)] for k in range(n)], float(np.mean([ep[("real_test", k)] for k in range(24)])))
+        # aprendizes
+        flat = ([r for r in rows_of(runs / "final_primary.jsonl") if r["instance"] == inst and r["method"] == "dqn"] if inst in ("cb4wd", "cb8wd", "cb12wd")
+                else [r for r in rows_of(runs / f"scale_{inst}.jsonl") if r["method"] == "dqn"])
+        seeds("dqn", flat)
+        seeds("dqn2m", list(budget_rows(runs, inst).values()) if inst in ("cb4wd", "cb8wd", "cb12wd") else [r for r in rows_of(runs / f"scale2m_{inst}.jsonl") if r["method"] == "dqn"])
+        seeds("dprl", [r for r in rows_of(runs / f"dprl_{inst}.jsonl") if r["method"] == "dprl"])
+        seeds("es", [r for r in rows_of(runs / f"es_{inst}.jsonl") if r["method"] == "es"])
+        seeds("es2m", [r for r in rows_of(runs / f"es2m_{inst}.jsonl") if r["method"] == "es"])
+        out[inst] = res
+    return out
+
+
+def cec_contrasts(runs, scales=SCALES, n=N_SUB):
+    """Contrastes do artigo (por escala): aprendiz − aprendiz por Welch (reward; positivo favorece o primeiro) e aprendiz × determinístico por semente."""
+    d = cec_data(runs, scales, n)
+    out = {}
+    for inst, r in d.items():
+        rows = {}
+        pairs = (("es", "dqn"), ("dprl", "dqn"), ("es", "dprl"), ("es2m", "dqn2m"))
+        raw = {}
+        for name, path, key in (("dqn", "final_primary.jsonl" if inst in ("cb4wd", "cb8wd", "cb12wd") else f"scale_{inst}.jsonl", "dqn"),
+                                ("dprl", f"dprl_{inst}.jsonl", "dprl"), ("es", f"es_{inst}.jsonl", "es"), ("es2m", f"es2m_{inst}.jsonl", "es")):
+            rr = [x for x in rows_of(Path(runs) / path) if x["method"] == key and (key != "dqn" or x.get("instance", inst) == inst)]
+            raw[name] = np.array([float(np.mean(x["test_rewards"][:n])) for x in rr if "test_rewards" in x])
+        if inst in ("cb4wd", "cb8wd", "cb12wd"):
+            raw["dqn2m"] = np.array([float(np.mean(x["test_rewards"][:n])) for x in budget_rows(runs, inst).values()])
+        else:
+            raw["dqn2m"] = np.array([float(np.mean(x["test_rewards"][:n])) for x in rows_of(Path(runs) / f"scale2m_{inst}.jsonl") if x["method"] == "dqn"])
+        for a, b in pairs:
+            if len(raw.get(a, [])) >= 2 and len(raw.get(b, [])) >= 2:
+                dw, (lo, hi), _ = welch(raw[a], raw[b])
+                rows[f"{a}_vs_{b}"] = {"delta": float(dw), "lo": float(lo), "hi": float(hi), "na": len(raw[a]), "nb": len(raw[b])}
+        for a in ("dqn", "dprl", "es", "dqn2m", "es2m"):
+            for ref in ("rollout", "rhea_s", "rhea_l", "heur"):
+                if ref in r and len(raw.get(a, [])) >= 2:
+                    rr = -r[ref]["mean"]
+                    dd = raw[a] - rr
+                    lo, hi = ci_t(dd)
+                    rows[f"{a}_vs_{ref}"] = {"delta": float(dd.mean()), "lo": float(lo), "hi": float(hi), "na": len(dd)}
+        out[inst] = rows
+    return out
+
+
+def cec_calibration(runs, scales=SCALES, delta=0.5):
+    """P12b: heurística evoluída (CMA-ES, melhor família por validação em cada execução) × grade, no teste inteiro (1000 cenários). Unidade = execução do CMA-ES;
+    a grade é determinística. Leitura pré-fixada: IC95% t > 0 → melhor; < 0 → pior; senão equivalente só se TOST (δ = 0,5) rejeitar, senão inconclusivo."""
+    out = {}
+    for inst in scales:
+        stay, grid, ref, src = cec_reference(runs, inst)
+        if grid is None:
+            continue
+        cm = rows_of(Path(runs) / f"cmaes_{inst}.jsonl")
+        by = {}
+        for r in cm:
+            by.setdefault(r["seed"], {})[r["family"]] = r
+        sel = [max(d.values(), key=lambda r: r["val_best"]) for d in by.values() if len(d) == 2]
+        if len(sel) < 2:
+            continue
+        t = np.array([r["test_mean"] for r in sel])
+        v = np.array([r["val_best"] for r in sel])
+        d = t - grid["test_mean"]                                         # reward: positivo favorece o CMA-ES
+        lo, hi = ci_t(d)
+        tlo, thi = ci_t(t)
+        ptost = float(AN.tost_paired(d, delta)) if d.std(ddof=1) > 0 else 1.0
+        verdict = "better" if lo > 0 else ("worse" if hi < 0 else ("equivalent" if ptost < 0.05 else "inconclusive"))
+        out[inst] = {"n_st": N_ST[inst], "n": len(sel), "grid_val": -max(grid["val_table"].values()), "grid_test": -float(grid["test_mean"]),
+                     "cma_val": -float(v.mean()), "cma_test": -float(t.mean()), "cma_lo": -float(thi), "cma_hi": -float(tlo),
+                     "delta": float(d.mean()), "lo": float(lo), "hi": float(hi), "p_tost": ptost, "verdict": verdict, "src": src,
+                     "ref_test": -float(ref["test_mean"]), "n_greedy": sum(r["family"] == "greedy" for r in sel)}
+    return out
+
+
+ES_BUDGETS = (("500k", "es_{}.jsonl"), ("2M", "es2m_{}.jsonl"), ("8M", "es8m_{}.jsonl"), ("32M", "es32m_{}.jsonl"))
+ES_STEPS = {"500k": 5e5, "2M": 2e6, "8M": 8e6, "32M": 3.2e7}
+
+
+def cec_es_budget(runs, scales=SCALES):
+    """P12d: neuroevolução (ES) × orçamento de passos, no teste inteiro (1000 cenários), unidade = semente. Contraste ES(B) − DQN(500 mil) por Welch (reward; positivo
+    favorece o ES). 'reached' = menor orçamento cujo IC95% do contraste inclui ou passa de 0 (None se nenhum)."""
+    out = {}
+    for inst in scales:
+        stay, grid, ref, src = cec_reference(runs, inst)
+        if ref is None:
+            continue
+        dq = [r for r in rows_of(Path(runs) / ("final_primary.jsonl" if inst in BASES else f"scale_{inst}.jsonl")) if r["method"] == "dqn" and r.get("instance", inst) == inst]
+        dqx = np.array([r["test_mean"] for r in dq], float)
+        rec = {"n_st": N_ST[inst], "heur": -float(ref["test_mean"]), "dqn": -float(dqx.mean()) if len(dqx) else float("nan"), "budgets": {}, "reached": None}
+        for tag, pat in ES_BUDGETS:
+            xs = np.array([r["test_mean"] for r in rows_of(Path(runs) / pat.format(inst)) if r["method"] == "es"], float)
+            if len(xs) < 2:
+                continue
+            lo, hi = ci_t(xs)
+            b = {"n": len(xs), "mean": -float(xs.mean()), "lo": -float(hi), "hi": -float(lo), "steps": ES_STEPS[tag]}
+            hd = xs - float(ref["test_mean"])                                # reward: positivo favorece o ES contra a heurística de referência (teste inteiro)
+            hlo, hhi = ci_t(hd)
+            b.update({"vs_heur": float(hd.mean()), "vs_heur_lo": float(hlo), "vs_heur_hi": float(hhi)})
+            if len(dqx) >= 2:
+                dw, (wlo, whi), _ = welch(xs, dqx)
+                b.update({"vs_dqn": float(dw), "vs_dqn_lo": float(wlo), "vs_dqn_hi": float(whi)})
+                if rec["reached"] is None and whi >= 0:
+                    rec["reached"] = tag
+            rec["budgets"][tag] = b
+        out[inst] = rec
+    return out
+
+
+def cec_rhea_vs_rollout(runs, scales=SCALES, n=N_SUB, boot=4000):
+    """P12c: RHEA − rollout (3, 64), pareado por cenário de teste (os n primeiros), IC95% bootstrap sobre cenários; positivo = RHEA melhor (reward)."""
+    out = {}
+    rng = np.random.default_rng(20261022)
+    for inst in scales:
+        ro = reference_rows(runs, inst)[2]
+        if inst in BASES and ro is not None:
+            roll = np.array(ro["test_rewards"][:n], float)
+        else:
+            ep = _episode_rows(Path(runs) / f"rollout_scale_{inst}.jsonl")
+            if not all(("test", k) in ep for k in range(n)):
+                continue
+            roll = np.array([ep[("test", k)] for k in range(n)], float)
+        rec = {"n_st": N_ST[inst], "rollout": -float(roll.mean())}
+        for cfg in ("S", "L"):
+            ep = _episode_rows(Path(runs) / f"rhea_{inst}.jsonl", cfg)
+            if not all(("test", k) in ep for k in range(n)):
+                continue
+            x = np.array([ep[("test", k)] for k in range(n)], float)
+            d = x - roll
+            idx = rng.integers(0, n, size=(boot, n))
+            bm = d[idx].mean(axis=1)
+            lo, hi = np.percentile(bm, [2.5, 97.5])
+            rec[cfg] = {"mean": -float(x.mean()), "delta": float(d.mean()), "lo": float(lo), "hi": float(hi)}
+        out[inst] = rec
+    return out
 
 
 def p8_report(runs):

@@ -320,5 +320,101 @@ class TestDprlData(unittest.TestCase):
         self.assertIn("(pendente)", "\n".join(P8.dprl_section(self.tmp)))
 
 
+class TestCecData(unittest.TestCase):
+    """Tabela única do CEC: todos os métodos nos mesmos n primeiros cenários de teste."""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._td.name)
+        t = self.tmp
+        inst = "cb30wd"
+        rng = np.random.default_rng(12)
+        dump(t / f"heuristics_scale_{inst}.jsonl", [
+            {"instance": inst, "method": "stay", "test_mean": -470.0, "test_rewards": [-470.0] * 1000, "real_test_mean": -450.0},
+            {"instance": inst, "method": "greedy_cal", "policy": "g", "val_table": {"c": -380.0}, "test_mean": -380.0, "test_rewards": [-400.0] * 5 + [-380.0] * 995, "real_test_mean": -390.0}])
+        dump(t / f"scale_{inst}.jsonl", [{"method": "dqn", "seed": s, "test_mean": -340.0, "test_rewards": [-340.0 + float(rng.normal(0, 1))] * 1000, "real_test_mean": -350.0} for s in range(4)])
+        dump(t / f"es_{inst}.jsonl", [{"method": "es", "seed": s, "test_mean": -400.0, "test_rewards": [-400.0 + float(rng.normal(0, 1))] * 1000, "real_test_mean": -410.0} for s in range(4)])
+        dump(t / f"rollout_scale_{inst}.jsonl", [{"instance": inst, "set": "test", "idx": k, "reward": -300.0} for k in range(300)]
+             + [{"instance": inst, "set": "real_test", "idx": k, "reward": -290.0} for k in range(24)])
+        dump(t / f"rhea_{inst}.jsonl", [{"instance": inst, "config": "S", "set": "test", "idx": k, "reward": -310.0} for k in range(300)]
+             + [{"instance": inst, "config": "S", "set": "real_test", "idx": k, "reward": -295.0} for k in range(24)]
+             + [{"instance": inst, "config": "L", "set": "test", "idx": k, "reward": -305.0} for k in range(10)])             # L incompleto: não entra
+        rows = []
+        for sd in range(4):
+            for fam, val, test in (("greedy", -375.0, -378.0), ("threshold", -377.0 - sd, -379.0)):
+                rows.append({"instance": inst, "family": fam, "seed": sd, "val_best": val, "test_mean": test, "test_rewards": [test] * 1000, "real_test_mean": -388.0})
+        dump(t / f"cmaes_{inst}.jsonl", rows)
+
+    def tearDown(self):
+        self._td.cleanup()
+
+    def test_subset_reduction_and_availability(self):
+        d = P8.cec_data(self.tmp, scales=("cb30wd",), n=300)["cb30wd"]
+        self.assertAlmostEqual(d["grid"]["mean"], (5 * 400 + 295 * 380) / 300, places=6)                 # grade no subconjunto
+        self.assertEqual(d["heur"]["src"], "cma")                                                        # val do CMA (−375) > val da grade (−380): referência = execução do CMA-ES
+        self.assertAlmostEqual(d["heur"]["mean"], 378.0)
+        self.assertAlmostEqual(d["rollout"]["mean"], 300.0)
+        self.assertIn("rhea_s", d)
+        self.assertNotIn("rhea_l", d)                                                                    # incompleto
+        self.assertEqual(d["dqn"]["n"], 4)
+        self.assertEqual(d["cma"]["n"], 4)                                                               # uma linha por execução, família de melhor validação
+        self.assertAlmostEqual(d["cma"]["mean"], 378.0)                                                  # greedy tem a melhor validação em todas as execuções
+        self.assertGreater(d["dqn"]["red"], d["es"]["red"])
+
+    def test_contrasts_welch_and_vs_deterministic(self):
+        c = P8.cec_contrasts(self.tmp, scales=("cb30wd",), n=300)["cb30wd"]
+        self.assertAlmostEqual(c["es_vs_dqn"]["delta"], -60.0, delta=2.0)                               # ES − DQN em reward: negativo = DQN melhor
+        self.assertLess(c["es_vs_dqn"]["hi"], 0)
+        self.assertAlmostEqual(c["dqn_vs_rollout"]["delta"], -340.0 - (-300.0), delta=2.0)
+        self.assertIn("es_vs_rhea_s", c)
+
+
+    def test_reference_stays_grid_when_cma_is_worse_in_validation(self):
+        dump(self.tmp / "cmaes_cb30wd.jsonl", [{"instance": "cb30wd", "family": f, "seed": s, "val_best": -390.0, "test_mean": -370.0, "test_rewards": [-370.0] * 1000,
+                                                "real_test_mean": -1.0} for s in range(3) for f in ("greedy", "threshold")])
+        d = P8.cec_data(self.tmp, scales=("cb30wd",), n=300)["cb30wd"]
+        self.assertEqual(d["heur"]["src"], "grid")                                                       # a escolha é por validação: o teste (−370, melhor) não entra
+        self.assertAlmostEqual(d["heur"]["mean"], (5 * 400 + 295 * 380) / 300, places=6)
+
+    def test_calibration_verdicts(self):
+        c = P8.cec_calibration(self.tmp, scales=("cb30wd",))["cb30wd"]
+        self.assertAlmostEqual(c["grid_test"], 380.0)
+        self.assertAlmostEqual(c["cma_test"], 378.0)
+        self.assertAlmostEqual(c["delta"], 2.0)                                                          # reward: CMA melhor que a grade em 2 (positivo)
+        self.assertEqual(c["n"], 4)
+        self.assertEqual(c["verdict"], "inconclusive" if c["lo"] <= 0 else "better")                    # IC degenerado (variância zero): lo = hi = 2 → "better"
+        self.assertEqual(c["verdict"], "better")
+
+    def test_calibration_equivalent_requires_tost(self):
+        rows = [{"instance": "cb30wd", "family": "greedy", "seed": s, "val_best": -375.0, "test_mean": -380.0 + e, "test_rewards": [-380.0] * 1000, "real_test_mean": -1.0}
+                for s, e in enumerate((-0.1, 0.1, 0.05, -0.05, 0.0, 0.02))]
+        rows += [{**r, "family": "threshold", "val_best": -400.0} for r in rows]
+        dump(self.tmp / "cmaes_cb30wd.jsonl", rows)
+        c = P8.cec_calibration(self.tmp, scales=("cb30wd",))["cb30wd"]
+        self.assertEqual(c["verdict"], "equivalent")                                                     # IC dentro de ±0,5 e TOST rejeita
+        self.assertLess(c["p_tost"], 0.05)
+
+    def test_es_budget_and_reached(self):
+        t = self.tmp
+        dump(t / "scale_cb30wd.jsonl", [{"method": "dqn", "seed": s, "test_mean": -340.0 + (s - 1.5)} for s in range(4)])
+        dump(t / "es_cb30wd.jsonl", [{"method": "es", "seed": s, "test_mean": -400.0 + (s - 1.5)} for s in range(4)])
+        dump(t / "es2m_cb30wd.jsonl", [{"method": "es", "seed": s, "test_mean": -390.0 + s} for s in range(5)])
+        dump(t / "es8m_cb30wd.jsonl", [{"method": "es", "seed": s, "test_mean": -341.0 + s} for s in range(3)])
+        dump(t / "es32m_cb30wd.jsonl", [{"method": "es", "seed": s, "test_mean": -338.0 + 0.5 * s} for s in range(3)])
+        b = P8.cec_es_budget(t, scales=("cb30wd",))["cb30wd"]
+        self.assertEqual(sorted(b["budgets"]), ["2M", "32M", "500k", "8M"])
+        self.assertAlmostEqual(b["dqn"], 340.0, delta=1.0)
+        self.assertLess(b["budgets"]["500k"]["vs_dqn_hi"], 0)                                           # ES 500k (−400) pior que o DQN (−340)
+        self.assertLess(b["budgets"]["500k"]["vs_heur_hi"], 0)                                          # ES 500k (−400) pior que a referência (−378)
+        self.assertGreater(b["budgets"]["32M"]["vs_heur"], 0)                                            # ES 32M (−338) melhor que a referência (−378)
+        self.assertEqual(b["reached"], "8M")                                                             # primeiro cujo IC inclui 0: 8M (−340 ± ...)
+
+    def test_rhea_vs_rollout_paired_bootstrap(self):
+        r = P8.cec_rhea_vs_rollout(self.tmp, scales=("cb30wd",), n=300)["cb30wd"]
+        self.assertAlmostEqual(r["rollout"], 300.0)
+        self.assertAlmostEqual(r["S"]["delta"], -10.0)                                                   # RHEA-S −310 contra rollout −300: pior em 10
+        self.assertNotIn("L", r)                                                                         # L incompleto
+
+
 if __name__ == "__main__":
     unittest.main()
