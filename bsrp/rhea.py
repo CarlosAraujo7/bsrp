@@ -5,6 +5,9 @@ A cada decisão evolui-se uma população de SEQUÊNCIAS de L ações planas (de
 comuns para toda a população naquela decisão; nunca a demanda real). A primeira ação do melhor plano é executada; o plano restante, deslocado de uma posição, entra na
 população da decisão seguinte (shift buffer). Operadores: seleção por torneio, cruzamento uniforme, mutação gene a gene, elitismo. O primeiro gene é sempre uma ação
 VÁLIDA no estado real; os demais genes são recortados pelo simulador (como em `BSRPEnv.step`). É o análogo evolutivo do `policies.Rollout` (Monte Carlo + heurística-base).
+
+Opcional (P13, DESVIOS.md 2026-10-22): `value` = função `value(lista_de_envs) -> array` de VALOR TERMINAL (ex.: `bsrp.hybrid.QValue`, o max de Q de um DQN congelado); com ela a aptidão de
+uma sequência é [soma das recompensas simuladas] + V(estado final), média nos K futuros. `value=None` reproduz exatamente o RHEA do P12c.
 """
 from __future__ import annotations
 
@@ -14,13 +17,14 @@ from .env import N_INTERVALS, BSRPEnv, Scenario
 
 
 class RHEA:
-    def __init__(self, L=4, pop=16, gens=10, K=8, elite=2, mut=None, tourn=3, seed=0):
+    def __init__(self, L=4, pop=16, gens=10, K=8, elite=2, mut=None, tourn=3, seed=0, value=None):
         self.L, self.pop, self.gens, self.K, self.elite, self.tourn = int(L), int(pop), int(gens), int(K), int(elite), int(tourn)
         self.mut = mut if mut is not None else 1.0 / max(1, int(L))
         self.rng = np.random.default_rng(seed)
         self._plan = None
         self._t_prev = -1
-        self.name = f"rhea(L={L},P={pop},G={gens},K={K})"
+        self.value = value
+        self.name = f"rhea(L={L},P={pop},G={gens},K={K})" + ("+V" if value is not None else "")
 
     # -- futuros do modelo -------------------------------------------------------
     def _futures(self, env: BSRPEnv):
@@ -34,6 +38,7 @@ class RHEA:
 
     def _fitness(self, env, genome, dep, arr):
         tot = 0.0
+        ends = []
         for k in range(self.K):
             c = env.clone()
             c.sc = Scenario(env.sc.init_occ, dep[k], arr[k])
@@ -42,6 +47,9 @@ class RHEA:
                     break
                 r, _ = c.step(int(a))
                 tot += r
+            ends.append(c)
+        if self.value is not None:                                    # valor terminal aprendido, em lote sobre os K estados finais (0 se o dia acabou)
+            tot += float(np.sum(self.value(ends)))
         return tot / self.K
 
     # -- evolução ------------------------------------------------------------------

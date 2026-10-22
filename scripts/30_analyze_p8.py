@@ -553,8 +553,8 @@ def dprl_section(runs):
 
 
 N_SUB = 300          # primeiros cenários de teste usados em TODAS as comparações do artigo do CEC (RHEA/rollout em 20/30 est. só têm 300)
-CEC_METHODS = ("stay", "heur", "cma", "rollout", "rhea_s", "rhea_l", "dqn", "dqn2m", "dprl", "es", "es2m")
-CEC_LABEL = {"stay": "Stay", "heur": "Reference heuristic", "grid": "Grid-calibrated heuristic", "cma": "CMA-ES heuristic", "rollout": "MC rollout", "rhea_s": "RHEA-S", "rhea_l": "RHEA-L",
+CEC_METHODS = ("stay", "heur", "cma", "rollout", "rhea_s", "rhea_l", "rhea_s_v", "rhea_l_v", "dqn", "dqn2m", "dprl", "es", "es2m")
+CEC_LABEL = {"stay": "Stay", "heur": "Reference heuristic", "grid": "Grid-calibrated heuristic", "cma": "CMA-ES heuristic", "rollout": "MC rollout", "rhea_s": "RHEA-S", "rhea_l": "RHEA-L", "rhea_s_v": "RHEA-S + DQN value", "rhea_l_v": "RHEA-L + DQN value",
              "dqn": "DQN", "dqn2m": "DQN (4x budget)", "dprl": "Dual-policy (DPRL-style)", "es": "ES (neuroevolution)", "es2m": "ES (4x budget)"}
 
 
@@ -587,6 +587,29 @@ def cec_reference(runs, inst):
     if best is not None and best["val_best"] > gval:
         return stay, grid, best, "cma"
     return stay, grid, grid, "grid"
+
+
+HYB_CFG = (("S", "rhea_s_v"), ("L", "rhea_l_v"))
+HYB_CFG_BASE = (("S", "rhea_s_v", "rhea_s"), ("L", "rhea_l_v", "rhea_l"))
+
+
+def cec_hybrid_rows(runs, inst, cfg, n=N_SUB):
+    """P13: linhas por SEMENTE DO DQN do RHEA com valor terminal (runs/rheav_<inst>.jsonl, um episódio por linha): {seed, test_rewards (n primeiros cenários), real_test_mean}
+    só para as sementes com os n episódios de teste e os 24 dias reais completos. Execução repetida do mesmo episódio: vale a última."""
+    ep = {}
+    for r in rows_of(Path(runs) / f"rheav_{inst}.jsonl"):
+        if r["config"] == cfg:
+            ep[(r["dqn_seed"], r["set"], r["idx"])] = r["reward"]
+    out = []
+    for s in sorted({k[0] for k in ep}):
+        if all((s, "test", k) in ep for k in range(n)) and all((s, "real_test", k) in ep for k in range(24)):
+            out.append({"seed": s, "test_rewards": [ep[(s, "test", k)] for k in range(n)], "real_test_mean": float(np.mean([ep[(s, "real_test", k)] for k in range(24)]))})
+    return out
+
+
+def cec_agent_rows(runs, inst):
+    """seed -> linha do DQN retreinado (runs/agents/dqn_<inst>.jsonl; o MESMO agente cujos pesos alimentam o RHEA-V); a última linha de cada semente."""
+    return {r["seed"]: r for r in rows_of(Path(runs) / "agents" / f"dqn_{inst}.jsonl")}
 
 
 def cec_data(runs, scales=SCALES, n=N_SUB):
@@ -641,6 +664,9 @@ def cec_data(runs, scales=SCALES, n=N_SUB):
             ep = _episode_rows(runs / f"rhea_{inst}.jsonl", cfg)
             if all(("test", k) in ep for k in range(n)) and all(("real_test", k) in ep for k in range(24)):
                 det(name, [ep[("test", k)] for k in range(n)], float(np.mean([ep[("real_test", k)] for k in range(24)])))
+        # híbrido: RHEA com valor terminal do DQN (por semente do DQN)
+        for cfg, name in HYB_CFG:
+            seeds(name, cec_hybrid_rows(runs, inst, cfg, n))
         # aprendizes
         flat = ([r for r in rows_of(runs / "final_primary.jsonl") if r["instance"] == inst and r["method"] == "dqn"] if inst in ("cb4wd", "cb8wd", "cb12wd")
                 else [r for r in rows_of(runs / f"scale_{inst}.jsonl") if r["method"] == "dqn"])
@@ -673,7 +699,19 @@ def cec_contrasts(runs, scales=SCALES, n=N_SUB):
             if len(raw.get(a, [])) >= 2 and len(raw.get(b, [])) >= 2:
                 dw, (lo, hi), _ = welch(raw[a], raw[b])
                 rows[f"{a}_vs_{b}"] = {"delta": float(dw), "lo": float(lo), "hi": float(hi), "na": len(raw[a]), "nb": len(raw[b])}
-        for a in ("dqn", "dprl", "es", "dqn2m", "es2m"):
+        # P13: híbrido pareado com o PRÓPRIO DQN (mesmos pesos, mesmos n cenários), por semente do DQN; positivo favorece o híbrido
+        ag = cec_agent_rows(runs, inst)
+        for cfg, name in HYB_CFG:
+            hr = cec_hybrid_rows(runs, inst, cfg, n)
+            raw[name] = np.array([float(np.mean(x["test_rewards"])) for x in hr])
+            same = [s for s in (x["seed"] for x in hr) if s in ag]
+            if len(same) >= 2:
+                hv = np.array([float(np.mean(x["test_rewards"])) for x in hr if x["seed"] in same])
+                dq = np.array([float(np.mean(ag[s]["test_rewards"][:n])) for s in same])
+                dd = hv - dq
+                lo, hi = ci_t(dd)
+                rows[f"{name}_vs_dqnsame"] = {"delta": float(dd.mean()), "lo": float(lo), "hi": float(hi), "na": len(dd), "dqn": -float(dq.mean())}
+        for a in ("dqn", "dprl", "es", "dqn2m", "es2m", "rhea_s_v", "rhea_l_v"):
             for ref in ("rollout", "rhea_s", "rhea_l", "heur"):
                 if ref in r and len(raw.get(a, [])) >= 2:
                     rr = -r[ref]["mean"]
@@ -681,6 +719,16 @@ def cec_contrasts(runs, scales=SCALES, n=N_SUB):
                     lo, hi = ci_t(dd)
                     rows[f"{a}_vs_{ref}"] = {"delta": float(dd.mean()), "lo": float(lo), "hi": float(hi), "na": len(dd)}
         out[inst] = rows
+    return out
+
+
+def cec_agent_check(runs, scales=SCALES):
+    """P13: o DQN retreinado (runs/agents) reproduz a linha original da tabela principal? {inst: {n, n_match}} (n_match = nº de sementes com teste idêntico)."""
+    out = {}
+    for inst in scales:
+        ag = cec_agent_rows(runs, inst)
+        if ag:
+            out[inst] = {"n": len(ag), "n_match": sum(1 for r in ag.values() if r.get("matches_original")), "n_orig": sum(1 for r in ag.values() if r.get("matches_original") is not None)}
     return out
 
 

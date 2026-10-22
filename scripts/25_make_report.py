@@ -760,8 +760,8 @@ def check_claims(R, A, S):
                 "P3b: o reajuste não altera detectavelmente o DQN (IC de Welch inclui 0) nas duas variantes"))
     return out
 
-CEC_KEY = {"stay": "Stay", "heur": "Ref", "grid": "Grid", "cma": "Cma", "rollout": "Roll", "rhea_s": "RheaS", "rhea_l": "RheaL", "dqn": "Dqn", "dqn2m": "DqnX", "dprl": "Dprl", "es": "Es", "es2m": "EsX"}
-CEC_COL = {"stay": "#898781", "heur": "#52514e", "cma": "#7c7b75", "rollout": "#eb6834", "rhea_s": "#f2a07d", "rhea_l": "#c24e1d", "dqn": "#2a78d6", "dqn2m": "#7fb2ee",
+CEC_KEY = {"stay": "Stay", "heur": "Ref", "grid": "Grid", "cma": "Cma", "rollout": "Roll", "rhea_s": "RheaS", "rhea_l": "RheaL", "rhea_s_v": "RheaSV", "rhea_l_v": "RheaLV", "dqnsame": "DqnSame", "dqn": "Dqn", "dqn2m": "DqnX", "dprl": "Dprl", "es": "Es", "es2m": "EsX"}
+CEC_COL = {"stay": "#898781", "heur": "#52514e", "cma": "#7c7b75", "rollout": "#eb6834", "rhea_s": "#f2a07d", "rhea_l": "#c24e1d", "rhea_s_v": "#59b89a", "rhea_l_v": "#1d7a5f", "dqn": "#2a78d6", "dqn2m": "#7fb2ee",
            "dprl": "#8d5a2b", "es": "#4a3aa7", "es2m": "#9085e9"}
 
 
@@ -776,6 +776,38 @@ def cec_cell(r, key="mean", hw=True):
 BUD_KEY = {"500k": "Fiveh", "2M": "Two", "8M": "Eight", "32M": "Thirtytwo"}
 ES_TICKS = {"500k": 5e5, "2M": 2e6, "8M": 8e6, "32M": 3.2e7}
 SCALE_LETTER = {"cb4wd": "A", "cb8wd": "B", "cb12wd": "C", "cb20wd": "D", "cb30wd": "E"}
+
+
+def cec_hybrid_table(D, C, tdir):
+    """P13: RHEA com valor terminal do DQN × o próprio DQN (mesmos pesos), o RHEA sem valor e o rollout; contrastes em demanda perdida/dia, positivo favorece o híbrido
+    (por semente do DQN, IC95% t). Só escalas/configurações com pelo menos 2 sementes completas."""
+    cell = lambda c: "--" if c is None else f"{pt(c['delta'], 1)} [{pt(c['lo'], 1)}; {pt(c['hi'], 1)}]"
+    mac = {}
+    with open(tdir / "cec_hybrid.tex", "w", encoding="utf-8") as f:
+        f.write("\\begin{tabular}{llrrrrrrr}\n\\toprule\nStations & Search & Seeds & DQN (same agents) & RHEA & RHEA + DQN value & vs DQN & vs RHEA & vs rollout \\\\\n\\midrule\n")
+        for inst in AN30.SCALES:
+            if inst not in D:
+                continue
+            L = SCALE_LETTER[inst]
+            for cfg, nm, base in AN30.HYB_CFG_BASE:
+                x = D[inst].get(nm)
+                if x is None:
+                    continue
+                c = C.get(inst, {})
+                cd, cb, cr = c.get(f"{nm}_vs_dqnsame"), c.get(f"{nm}_vs_{base}"), c.get(f"{nm}_vs_rollout")
+                k = CEC_KEY[nm]
+                if cd is not None:
+                    mac[f"cecHyb{cfg}Dqn{L}"], mac[f"cecHyb{cfg}Delta{L}"], mac[f"cecHyb{cfg}Lo{L}"], mac[f"cecHyb{cfg}Hi{L}"] = pt(-cd["dqn"], 1), pt(cd["delta"], 1), pt(cd["lo"], 1), pt(cd["hi"], 1)
+                if cb is not None:
+                    mac[f"cecHyb{cfg}VsRhea{L}"], mac[f"cecHyb{cfg}VsRheaLo{L}"], mac[f"cecHyb{cfg}VsRheaHi{L}"] = pt(cb["delta"], 1), pt(cb["lo"], 1), pt(cb["hi"], 1)
+                if cr is not None:
+                    mac[f"cecHyb{cfg}VsRoll{L}"], mac[f"cecHyb{cfg}VsRollLo{L}"], mac[f"cecHyb{cfg}VsRollHi{L}"] = pt(cr["delta"], 1), pt(cr["lo"], 1), pt(cr["hi"], 1)
+                mac[f"cecHyb{cfg}{L}"], mac[f"cecHyb{cfg}Hw{L}"], mac[f"cecHyb{cfg}N{L}"] = pt(x["mean"], 1), pt((x["hi"] - x["lo"]) / 2, 1), str(x["n"])
+                dq = "--" if cd is None else pt(cd["dqn"], 1)
+                f.write(tex_num(f"{D[inst]['n_st']} & {cfg} & {x['n']} & {dq} & {pt(D[inst][base]['mean'], 1) if base in D[inst] else '--'} & {pt(x['mean'], 1)}$\\pm${pt((x['hi'] - x['lo']) / 2, 1)} & "
+                                f"{cell(cd)} & {cell(cb)} & {cell(cr)} \\\\\n"))
+        f.write("\\bottomrule\n\\end{tabular}\n")
+    return mac
 
 
 def cec_evo_outputs(runs, tdir, root):
@@ -995,6 +1027,8 @@ def check_claims_cec(runs):
         c = C[i].get("dqn2m_vs_rhea_l")
         got = None if c is None else ("dqn2m" if c["lo"] > 0 else ("rhea" if c["hi"] < 0 else "empate"))
         out.append((got == wl[i], f"CEC {i}: DQN 4× × RHEA-L = {got} (texto: {wl[i]})"))
+    for inst, c in AN30.cec_agent_check(runs).items():
+        out.append((c["n_match"] == c["n"] == c["n_orig"], f"CEC {inst}: os DQN retreinados (pesos salvos) reproduzem a tabela principal ({c['n_match']}/{c['n']} sementes idênticas)"))
     cv = AN30.cec_curves(runs)
     out.append((all(c["dqn"] is not None and "32M" in c["es"] and c["dqn"]["mean"][-1] < c["es"]["32M"]["mean"][-1] for c in cv.values()) and len(cv) == 3,
                 "CEC: a validação final do DQN (500 mil passos) é menor que a do ES com 32M passos em 4, 12 e 30 est."))
@@ -1045,6 +1079,7 @@ def write_cec(runs, root):
             mac[f"cecC{nm}{L}"], mac[f"cecC{nm}Lo{L}"], mac[f"cecC{nm}Hi{L}"] = pt(v["delta"], 1), pt(v["lo"], 1), pt(v["hi"], 1)
     mac["cecN"] = str(AN30.N_SUB)
     mac.update(cec_evo_outputs(runs, tdir, root))
+    mac.update(cec_hybrid_table(D, C, tdir))
     with open(OUT / "numeros_cec.tex", "w", encoding="utf-8") as f:
         f.write("% GERADO por scripts/25_make_report.py --lang en. Macros cecU/cecR/cecC: demanda perdida, redução (%) e contrastes por escala (A..E = 4, 8, 12, 20, 30 estações).\n")
         for k, v in mac.items():

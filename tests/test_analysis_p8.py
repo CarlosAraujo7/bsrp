@@ -436,6 +436,35 @@ class TestCecData(unittest.TestCase):
         self.assertEqual((c["pop"], c["bs"], c["cfg_id"]), (64, 4, 8))
         self.assertAlmostEqual(c["val"], 401.5)
 
+    def _write_hybrid(self, n_seeds=3, cfg="S", full=True):
+        t = self.tmp
+        rows = []
+        for s in range(n_seeds):
+            n_test = 300 if (full or s == 0) else 5                                        # semente incompleta não entra
+            rows += [{"instance": "cb30wd", "config": cfg, "dqn_seed": s, "set": "test", "idx": k, "reward": -330.0 - s} for k in range(n_test)]
+            rows += [{"instance": "cb30wd", "config": cfg, "dqn_seed": s, "set": "real_test", "idx": k, "reward": -320.0} for k in range(24)]
+        dump(t / "rheav_cb30wd.jsonl", rows)
+        dump(t / "agents" / "dqn_cb30wd.jsonl", [{"method": "dqn", "seed": s, "test_mean": -345.0 - s, "test_rewards": [-345.0 - s] * 1000, "matches_original": True} for s in range(n_seeds)])
+
+    def test_hybrid_rows_table_and_pairing_with_the_same_dqn(self):
+        self._write_hybrid(3)
+        d = P8.cec_data(self.tmp, scales=("cb30wd",), n=300)["cb30wd"]
+        self.assertEqual(d["rhea_s_v"]["n"], 3)
+        self.assertAlmostEqual(d["rhea_s_v"]["mean"], 331.0)                                  # sementes −330, −331, −332
+        self.assertAlmostEqual(d["rhea_s_v"]["real"], 320.0)
+        self.assertNotIn("rhea_l_v", d)                                                        # sem linhas L
+        c = P8.cec_contrasts(self.tmp, scales=("cb30wd",), n=300)["cb30wd"]
+        self.assertAlmostEqual(c["rhea_s_v_vs_dqnsame"]["delta"], 15.0)                        # −330−s contra −345−s: +15 em todas as sementes (pareado: IC degenerado)
+        self.assertAlmostEqual(c["rhea_s_v_vs_dqnsame"]["dqn"], 346.0)
+        self.assertAlmostEqual(c["rhea_s_v_vs_rhea_s"]["delta"], -331.0 - (-310.0), delta=1e-6)  # contra o RHEA-S sem valor (−310): o híbrido sintético é pior em 21
+        self.assertAlmostEqual(c["rhea_s_v_vs_rollout"]["delta"], -331.0 - (-300.0), delta=1e-6)
+
+    def test_hybrid_incomplete_seed_is_dropped_and_agent_check(self):
+        self._write_hybrid(3, full=False)
+        self.assertEqual([x["seed"] for x in P8.cec_hybrid_rows(self.tmp, "cb30wd", "S")], [0])
+        self.assertNotIn("rhea_s_v", P8.cec_data(self.tmp, scales=("cb30wd",), n=300)["cb30wd"])   # < 2 sementes completas
+        self.assertEqual(P8.cec_agent_check(self.tmp, scales=("cb30wd",))["cb30wd"], {"n": 3, "n_match": 3, "n_orig": 3})
+
     def test_rhea_vs_rollout_paired_bootstrap(self):
         r = P8.cec_rhea_vs_rollout(self.tmp, scales=("cb30wd",), n=300)["cb30wd"]
         self.assertAlmostEqual(r["rollout"], 300.0)
