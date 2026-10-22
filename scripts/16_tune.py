@@ -36,6 +36,7 @@ DEFAULTS = {
     "tab_cluster": {"alpha": 0.1, "eps_decay_frac": 0.7, "eps_end": 0.05},
     "tab_station": {"alpha": 0.1, "eps_decay_frac": 0.7, "eps_end": 0.05},
     "pg": {"lr_actor": 3e-4, "lr_critic": 1e-3, "entropy": 0.01, "episodes_per_update": 8},
+    "es": {"pop": 64, "sigma": 0.2, "lr": 0.05, "bs": 4},                      # P12 (DESVIOS.md 2026-10-22): neuroevolução OpenAI-ES, rede 64–64
 }
 TRAIN_KEYS = {"eps_decay_frac", "eps_end"}
 
@@ -48,6 +49,9 @@ def sample_cfg(method, rng):
     if method.startswith("tab_"):
         return {"alpha": float(rng.choice([0.02, 0.05, 0.1, 0.2, 0.5])), "eps_decay_frac": float(rng.choice([0.3, 0.5, 0.7, 0.9])),
                 "eps_end": float(rng.choice([0.01, 0.05, 0.1]))}
+    if method == "es":
+        return {"pop": int(rng.choice([16, 32, 64, 128])), "sigma": float(10 ** rng.uniform(np.log10(0.05), np.log10(0.5))),
+                "lr": float(10 ** rng.uniform(-2, np.log10(0.2))), "bs": int(rng.choice([1, 2, 4, 8, 16]))}
     if method == "pg":
         return {"lr_actor": float(10 ** rng.uniform(-4, -2.5)), "lr_critic": float(10 ** rng.uniform(-3.5, -2)),
                 "entropy": float(rng.choice([0.003, 0.01, 0.03, 0.1])), "episodes_per_update": int(rng.choice([4, 8, 16, 32]))}
@@ -85,6 +89,9 @@ def ext_block(method, rng, n):
     elif method.startswith("tab_"):
         cols = {"alpha": _bal(rng, [0.02, 0.05, 0.1, 0.2, 0.5, 0.8], n),
                 "eps_decay_frac": _bal(rng, [0.1, 0.2, 0.3, 0.5, 0.7, 0.9], n), "eps_end": _bal(rng, [0.01, 0.05, 0.1, 0.2], n)}
+    elif method == "es":     # P12: o piloto mostrou que σ pequeno não aprende; explora σ, pop e bs maiores (o orçamento fixo em passos limita pop × bs)
+        cols = {"pop": _bal(rng, [64, 128, 256], n), "sigma": _bal_log(rng, np.log10(0.1), np.log10(0.8), n),
+                "lr": _bal_log(rng, np.log10(0.03), np.log10(0.3), n), "bs": _bal(rng, [4, 8, 16, 32], n)}
     elif method == "pg":     # vencedor nas 3 escalas: entropia=0,1 (máx.) e episodes_per_update=4 (mín.)
         cols = {"lr_actor": _bal_log(rng, -4, -2.5, n), "lr_critic": _bal_log(rng, -3.5, -2, n),
                 "entropy": _bal(rng, [0.1, 0.3, 1.0], n), "episodes_per_update": _bal(rng, [1, 2, 4], n)}
@@ -149,13 +156,14 @@ def check_reuse(r, cfg, a, sc, inst, method, ci, seed):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--instance", required=True)
-    ap.add_argument("--methods", nargs="+", default=list(DEFAULTS))
+    ap.add_argument("--methods", nargs="+", default=[m for m in DEFAULTS if m != "es"])
     ap.add_argument("--configs", type=int, default=8)
     ap.add_argument("--seeds", type=int, nargs="+", default=[1000, 1001])
     ap.add_argument("--budget", type=int, default=100_000)
     ap.add_argument("--eval-every", type=int, default=20_000)
     ap.add_argument("--space", choices=["orig", "ext"], default="orig",
                     help="ext: pool estendido (8 originais reaproveitadas de tune_<inst>.jsonl + novas); grava tuned_ext_<inst>.json")
+    ap.add_argument("--best-file", default=None, help="arquivo de saída da melhor config (padrão: tuned_<inst>.json / tuned_ext_<inst>.json); ex.: runs/tuned_es_<inst>.json")
     ap.add_argument("--shard", default="0/1", help="i/N: executa só a fatia i de N das execuções pendentes (use com --fill-only)")
     ap.add_argument("--fill-only", action="store_true",
                     help="só executa/grava as execuções da fatia; NÃO escolhe a melhor config (rode depois sem --fill-only para escolher)")
@@ -165,7 +173,7 @@ def main():
         raise SystemExit("--shard i/N com N > 1 exige --fill-only (a escolha da melhor config é feita depois, sobre o pool completo)")
     inst, sc = RP.get_bundle(a.instance)
     out = ROOT / "runs" / f"tune_{inst.name}.jsonl"           # log único: as 8 originais ficam intactas, as novas são anexadas
-    best_path = ROOT / "runs" / (f"tuned_ext_{inst.name}.json" if a.space == "ext" else f"tuned_{inst.name}.json")
+    best_path = Path(a.best_file) if a.best_file else ROOT / "runs" / (f"tuned_ext_{inst.name}.json" if a.space == "ext" else f"tuned_{inst.name}.json")
     best = json.load(open(best_path)) if best_path.exists() else {}
     all_cfgs = {m: config_list(m, a.configs, a.space) for m in a.methods}
 

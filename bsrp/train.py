@@ -14,6 +14,7 @@ import numpy as np
 
 from .agents import DQN, PolicyGradient, QTabular
 from .dprl import DualDQN
+from .evo import ESAgent
 from .env import BSRPEnv, Instance, ScenarioSet, evaluate, run_episode, sample_scenarios
 
 SALT = 20261012
@@ -41,6 +42,10 @@ def make_agent(method: str, inst: Instance, seed: int, **kw):
         kw = dict(kw)
         hidden = tuple(kw.pop("hidden", (64, 64)))
         return DualDQN(inst, hidden=hidden, rng_init=r_init, rng_sample=r_samp, **kw)
+    if method == "es":                                         # P12: neuroevolução (OpenAI-ES) sobre a mesma rede 64–64; ver bsrp/evo.py
+        kw = dict(kw)
+        hidden = tuple(kw.pop("hidden", (64, 64)))
+        return ESAgent(inst, hidden=hidden, rng_init=r_init, rng_sample=r_samp, **kw)
     if method == "pg":
         return PolicyGradient(inst, rng_init=r_init, rng_sample=r_samp, **kw)
     raise ValueError(method)
@@ -49,6 +54,8 @@ def make_agent(method: str, inst: Instance, seed: int, **kw):
 def train(inst: Instance, agent, seed: int, budget_steps: int, val: ScenarioSet, eval_every: int,
           eps_end: float = 0.05, eps_decay_frac: float = 0.7):
     _, r_explore, r_env, _ = streams(seed)
+    if isinstance(agent, ESAgent):                             # evolutivo: o laço é por gerações; ruído = fluxo "explore", cenários = fluxo "env_train"
+        return agent.fit(inst, r_explore, r_env, budget_steps, val, eval_every)
     env, env_val = BSRPEnv(inst), BSRPEnv(inst)
     tab = isinstance(agent, QTabular)
     decay_steps = max(1, int(eps_decay_frac * budget_steps))

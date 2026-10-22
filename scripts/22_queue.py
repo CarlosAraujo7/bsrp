@@ -22,6 +22,8 @@
   (`runs/arch_<tag>_<inst>.jsonl`).
 * `dprl` (P11): adaptação do DPRL (`bsrp/dprl.py`) com a config do DQN plano da escala (`runs/tuned_dprl_<inst>.json`), 500 mil passos, 5 sementes
   (`runs/dprl_<inst>.jsonl`).
+* `es` (P12a): neuroevolução (OpenAI-ES, rede 64–64) com a config escolhida em validação por escala (`runs/tuned_es_<inst>.json`): `es` = 500 mil passos × 10
+  sementes e `es2m` = 2 milhões × 5 sementes (`runs/<tag>_<inst>.jsonl`).
 * Os reruns finais só entram para métodos cuja config escolhida em validação difere da original (regra do DESVIOS.md).
 
   python scripts/22_queue.py --kinds finals ablation --workers 4
@@ -62,7 +64,9 @@ SCALE_BUDGETS = (("scale", 500_000), ("scale2m", 2_000_000))
 ARCH_INSTANCES, ARCH_SEEDS = ("cb30wd", "cb12wd"), tuple(range(5))   # P10 (DESVIOS.md 2026-10-20): DQN com rede mais larga, 500 mil passos
 ARCH_WIDTHS = {"h128": 1.8, "h256": 3.4}                                # custo relativo aproximado vs 64-64 (medido em 30 est.)
 DPRL_INSTANCES, DPRL_SEEDS = ("cb30wd", "cb12wd", "cb20wd", "cb8wd", "cb4wd"), tuple(range(5))   # P11 (DESVIOS.md 2026-10-20): adaptação do DPRL
-KIND_RANK = {"finals": 0, "sens": 1, "sensrt": 2, "reseedfinals": 3, "budget4x": 4, "scale": 5, "dprl": 6, "arch": 7, "sensx": 8, "seo": 9, "ablation": 10}
+ES_INSTANCES = ("cb30wd", "cb20wd", "cb12wd", "cb8wd", "cb4wd")        # P12a (DESVIOS.md 2026-10-22): neuroevolução (OpenAI-ES); config escolhida em val por escala
+ES_RUNS = (("es", 500_000, tuple(range(10))), ("es2m", 2_000_000, tuple(range(5))))      # (tag, passos, sementes)
+KIND_RANK = {"finals": 0, "sens": 1, "sensrt": 2, "reseedfinals": 3, "budget4x": 4, "scale": 5, "dprl": 6, "es": 7, "arch": 8, "sensx": 9, "seo": 10, "ablation": 11}
 
 
 @dataclass
@@ -211,6 +215,8 @@ def build_jobs(root, insts=INSTANCES, kinds=("finals", "ablation")):
         jobs += arch_jobs(root)
     if "dprl" in kinds:
         jobs += dprl_jobs(root)
+    if "es" in kinds:
+        jobs += es_jobs(root)
     return jobs
 
 
@@ -288,6 +294,29 @@ def dprl_jobs(root):
     return jobs
 
 
+def es_jobs(root, tags=("es", "es2m")):
+    """P12a: ES (neuroevolução) com a config escolhida em validação por escala (runs/tuned_es_<inst>.json): `es` = 500 mil passos × 10 sementes,
+    `es2m` = 2 milhões × 5 sementes (runs/<tag>_<inst>.jsonl). Só entra a instância cujo arquivo de config e cenários existem."""
+    root = Path(root)
+    qdir, py, jobs = root / "runs" / "_q", sys.executable, []
+    for inst in ES_INSTANCES:
+        p_cfg = root / "runs" / f"tuned_es_{inst}.json"
+        if not p_cfg.exists() or not all((root / "scenarios" / f"{k}_{inst}.npz").exists() for k in ("val", "test")):
+            continue
+        for tag, budget, seeds in ES_RUNS:
+            if tag not in tags:
+                continue
+            target = root / "runs" / f"{tag}_{inst}.jsonl"
+            done = {r["seed"] for r in read_rows(target)}
+            for s in seeds:
+                if s not in done:
+                    tmp = qdir / f"{inst}_{tag}_{s}.jsonl"
+                    cmd = [py, "-I", str(root / "scripts" / "13_run_protocol.py"), "learners", "--instances", inst, "--methods", "es",
+                           "--seeds", str(s), "--budget", str(budget), "--eval-every", str(budget // 10), "--tuned", "--tuned-file", str(p_cfg), "--out", str(tmp)]
+                    jobs.append(Job((inst, "es", tag, s), "es", 0.4 * (budget / BUDGET), cmd, tmp, target))
+    return jobs
+
+
 def order(jobs):
     return sorted(jobs, key=lambda j: (KIND_RANK[j.kind], -j.cost, j.key))
 
@@ -361,7 +390,7 @@ def pid_alive(pid):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--kinds", nargs="+", default=["finals", "ablation"], choices=["finals", "sens", "sensrt", "sensx", "budget4x", "reseedfinals", "scale", "arch", "dprl", "seo", "ablation"])
+    ap.add_argument("--kinds", nargs="+", default=["finals", "ablation"], choices=["finals", "sens", "sensrt", "sensx", "budget4x", "reseedfinals", "scale", "arch", "dprl", "es", "seo", "ablation"])
     ap.add_argument("--instances", nargs="+", default=list(INSTANCES))
     ap.add_argument("--workers", type=int, default=4)
     ap.add_argument("--poll", type=float, default=20.0)
@@ -372,7 +401,7 @@ def main():
     if lock.exists() and pid_alive(int(lock.read_text().strip() or 0)):
         raise SystemExit(f"já há uma fila em execução (PID {lock.read_text().strip()})")
     lock.write_text(str(os.getpid()))
-    required = {"finals": METHODS, "sens": SENS_METHODS, "sensrt": (), "sensx": (), "budget4x": ("dqn",), "reseedfinals": (), "scale": (), "arch": (), "dprl": (), "seo": (), "ablation": ("dqn",)}
+    required = {"finals": METHODS, "sens": SENS_METHODS, "sensrt": (), "sensx": (), "budget4x": ("dqn",), "reseedfinals": (), "scale": (), "arch": (), "dprl": (), "es": (), "seo": (), "ablation": ("dqn",)}
 
     def complete():
         for inst in a.instances:

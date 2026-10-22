@@ -202,9 +202,27 @@ class TestBuildJobs(unittest.TestCase):
         self.assertEqual(j.target.name, "dprl_cb30wd.jsonl")
         self.assertGreater(j.cost, Q.est_cost("dqn", CFG_DQN))
 
+    def test_es_jobs_need_the_tuned_es_file_and_cover_500k_and_2m(self):
+        self.assertEqual(Q.build_jobs(self.root, ("cb12wd",), ("es",)), [])
+        sc = self.root / "scenarios"
+        sc.mkdir(exist_ok=True)
+        for k in ("val", "test"):
+            (sc / f"{k}_cb12wd.npz").write_bytes(b"")
+        (self.root / "runs" / "tuned_es_cb12wd.json").write_text(json.dumps({"es": {"cfg_id": 3, "cfg": {"pop": 64, "sigma": 0.2, "lr": 0.05, "bs": 4}}}))
+        dump(self.root / "runs" / "es_cb12wd.jsonl", [{"method": "es", "seed": s} for s in (0, 1)])
+        jobs = Q.build_jobs(self.root, ("cb12wd",), ("es",))
+        keys = {j.key for j in jobs}
+        self.assertEqual({k[3] for k in keys if k[2] == "es"}, set(range(2, 10)))
+        self.assertEqual({k[3] for k in keys if k[2] == "es2m"}, set(range(5)))
+        j = next(j for j in jobs if j.key[2] == "es2m")
+        self.assertEqual(j.cmd[j.cmd.index("--methods") + 1], "es")
+        self.assertEqual(j.cmd[j.cmd.index("--budget") + 1], "2000000")
+        self.assertTrue(j.cmd[j.cmd.index("--tuned-file") + 1].endswith("tuned_es_cb12wd.json"))
+        self.assertEqual(j.target.name, "es2m_cb12wd.jsonl")
+
     def test_kind_rank_orders_the_kinds(self):
         self.assertEqual(sorted(Q.KIND_RANK, key=Q.KIND_RANK.get),
-                         ["finals", "sens", "sensrt", "reseedfinals", "budget4x", "scale", "dprl", "arch", "sensx", "seo", "ablation"])
+                         ["finals", "sens", "sensrt", "reseedfinals", "budget4x", "scale", "dprl", "es", "arch", "sensx", "seo", "ablation"])
 
     def test_sens_names_match_instance_names(self):
         names = [n for lst in Q.SENS.values() for _, n in lst]
