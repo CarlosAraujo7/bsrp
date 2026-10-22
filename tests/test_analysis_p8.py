@@ -409,6 +409,33 @@ class TestCecData(unittest.TestCase):
         self.assertGreater(b["budgets"]["32M"]["vs_heur"], 0)                                            # ES 32M (−338) melhor que a referência (−378)
         self.assertEqual(b["reached"], "8M")                                                             # primeiro cujo IC inclui 0: 8M (−340 ± ...)
 
+    def test_curves_are_positive_unmet_with_ci_over_seeds(self):
+        t = self.tmp
+        dump(t / "scale_cb30wd.jsonl", [{"method": "dqn", "seed": s, "test_mean": -340.0, "train_seconds": 100.0 + s,
+                                         "curve": [{"steps": 50000, "val": -400.0 - s}, {"steps": 100000, "val": -380.0 + s}]} for s in range(3)])
+        dump(t / "es_cb30wd.jsonl", [{"method": "es", "seed": s, "test_mean": -420.0, "train_seconds": 40.0,
+                                      "curve": [{"steps": 51000, "val": -450.0}, {"steps": 102000, "val": -440.0 + 2 * s}]} for s in range(3)])
+        c = P8.cec_curves(t, scales=("cb30wd",))["cb30wd"]
+        self.assertEqual(c["dqn"]["n"], 3)
+        self.assertAlmostEqual(c["dqn"]["mean"][0], 401.0)                                               # val −400 −s → demanda 400 + s, média 401
+        self.assertAlmostEqual(c["dqn"]["mean"][1], 379.0)
+        self.assertTrue((c["dqn"]["lo"] < c["dqn"]["mean"]).all() and (c["dqn"]["hi"] > c["dqn"]["mean"]).all())
+        self.assertEqual(list(c["es"]), ["500k"])                                                        # só o orçamento com arquivo
+        self.assertAlmostEqual(c["es"]["500k"]["steps"][1], 102000.0)
+
+    def test_es_budget_training_time_and_config(self):
+        t = self.tmp
+        dump(t / "scale_cb30wd.jsonl", [{"method": "dqn", "seed": s, "test_mean": -340.0 + (s - 1.5), "train_seconds": 1000.0} for s in range(4)])
+        dump(t / "es_cb30wd.jsonl", [{"method": "es", "seed": s, "test_mean": -400.0 + (s - 1.5), "train_seconds": 40.0} for s in range(4)])
+        b = P8.cec_es_budget(t, scales=("cb30wd",))["cb30wd"]
+        self.assertAlmostEqual(b["dqn_secs"], 1000.0)
+        self.assertAlmostEqual(b["budgets"]["500k"]["secs"], 40.0)
+        dump(t / "tuned_es_cb30wd.json", [])
+        (t / "tuned_es_cb30wd.json").write_text(json.dumps({"es": {"cfg_id": 8, "cfg": {"pop": 64, "sigma": 0.13, "lr": 0.14, "bs": 4}, "val_mean": -401.5}}), encoding="utf-8")
+        c = P8.cec_es_config(t, scales=("cb30wd",))["cb30wd"]
+        self.assertEqual((c["pop"], c["bs"], c["cfg_id"]), (64, 4, 8))
+        self.assertAlmostEqual(c["val"], 401.5)
+
     def test_rhea_vs_rollout_paired_bootstrap(self):
         r = P8.cec_rhea_vs_rollout(self.tmp, scales=("cb30wd",), n=300)["cb30wd"]
         self.assertAlmostEqual(r["rollout"], 300.0)

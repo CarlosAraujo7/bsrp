@@ -1,0 +1,90 @@
+{
+ "others_busy_note": "maquina sem outros runs meus; outros processos do usuario (MCP) ativos",
+ "commit": "205b70d",
+ "dirty": false,
+ "cb4wd": {
+  "rollout": {
+   "decisions": 32,
+   "model_steps_per_decision": 3384.0,
+   "ms_per_decision": 112.06981249961245
+  },
+  "rhea_s": {
+   "decisions": 32,
+   "model_steps_per_decision": 4331.0,
+   "ms_per_decision": 98.6705656250706
+  },
+  "rhea_l": {
+   "decisions": 32,
+   "model_steps_per_decision": 20252.0,
+   "ms_per_decision": 574.6454187501513
+  }
+ },
+ "cb8wd": {
+  "rollout": {
+   "decisions": 32,
+   "model_steps_per_decision": 6800.0,
+   "ms_per_decision": 300.6646093749623
+  },
+  "rhea_s": {
+   "decisions": 32,
+   "model_steps_per_decision": 4331.0,
+   "ms_per_decision": 103.90107500006707
+  },
+  "rhea_l": {
+   "decisions": 32,
+   "model_steps_per_decision": 20252.0,
+   "ms_per_decision": 673.4125500001937
+  }
+ },
+ "cb12wd": {
+  "rollout": {
+   "decisions": 32,
+   "model_steps_per_decision": 10128.0,
+   "ms_per_decision": 364.6744406250946
+  },
+  "rhea_s": {
+   "decisions": 32,
+   "model_steps_per_decision": 4331.0,
+   "ms_per_decision": 144.89217187474424
+  },
+  "rhea_l": {
+   "decisions": 32,
+   "model_steps_per_decision": 20252.0,
+   "ms_per_decision": 683.1993874998261
+  }
+ },
+ "cb20wd": {
+  "rollout": {
+   "decisions": 32,
+   "model_steps_per_decision": 16240.0,
+   "ms_per_decision": 806.4546781247373
+  },
+  "rhea_s": {
+   "decisions": 32,
+   "model_steps_per_decision": 4331.0,
+   "ms_per_decision": 156.0115031247733
+  },
+  "rhea_l": {
+   "decisions": 32,
+   "model_steps_per_decision": 20252.0,
+   "ms_per_decision": 713.496943750215
+  }
+ },
+ "cb30wd": {
+  "rollout": {
+   "decisions": 32,
+   "model_steps_per_decision": 26940.0,
+   "ms_per_decision": 1274.3337156248344
+  },
+  "rhea_s": {
+   "decisions": 32,
+   "model_steps_per_decision": 4331.0,
+   "ms_per_decision": 106.76469062491378
+  },
+  "rhea_l": {
+   "decisions": 32,
+   "model_steps_per_decision": 20252.0,
+   "ms_per_decision": 492.6626343753924
+  }
+ }
+}

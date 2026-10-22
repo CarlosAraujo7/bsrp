@@ -803,6 +803,7 @@ def cec_evo_outputs(runs, tdir, root):
             L = SCALE_LETTER[inst]
             cells = [pt(b["dqn"], 1)]
             mac[f"cecBudDqn{L}"], mac[f"cecBudRef{L}"] = pt(b["dqn"], 1), pt(b["heur"], 1)
+            mac[f"cecTimeDqn{L}"] = pt(b["dqn_secs"] / 60, 0)
             for tg in tags:
                 x = b["budgets"].get(tg)
                 if x is None:
@@ -811,6 +812,7 @@ def cec_evo_outputs(runs, tdir, root):
                 k = BUD_KEY[tg]
                 hw = (x["hi"] - x["lo"]) / 2
                 mac[f"cecBud{k}{L}"], mac[f"cecBud{k}Hw{L}"], mac[f"cecBud{k}N{L}"] = pt(x["mean"], 1), pt(hw, 1), str(x["n"])
+                mac[f"cecTime{k}{L}"] = pt(x["secs"] / 60, 0)
                 mac[f"cecBud{k}H{L}"], mac[f"cecBud{k}HLo{L}"], mac[f"cecBud{k}HHi{L}"] = pt(x["vs_heur"], 1), pt(x["vs_heur_lo"], 1), pt(x["vs_heur_hi"], 1)
                 if "vs_dqn" in x:
                     mac[f"cecBud{k}Vs{L}"], mac[f"cecBud{k}VsLo{L}"], mac[f"cecBud{k}VsHi{L}"] = pt(x["vs_dqn"], 1), pt(x["vs_dqn_lo"], 1), pt(x["vs_dqn_hi"], 1)
@@ -818,8 +820,14 @@ def cec_evo_outputs(runs, tdir, root):
             mac[f"cecBudReached{L}"] = b["reached"] if b["reached"] else "none"
             f.write(f"{b['n_st']} & " + " & ".join(cells) + " \\\\\n")
         f.write("\\bottomrule\n\\end{tabular}\n")
+    cp = Path(runs) / "cost_steps.json"
+    cs = json.loads(cp.read_text(encoding="utf-8")) if cp.exists() else {}
     with open(tdir / "cec_rhea.tex", "w", encoding="utf-8") as f:
-        f.write("\\begin{tabular}{lrrr}\n\\toprule\nStations & Rollout & RHEA-S$-$rollout [95\\% CI] & RHEA-L$-$rollout [95\\% CI] \\\\\n\\midrule\n")
+        f.write("\\begin{tabular}{lrrr" + ("rrr" if cs else "") + "}\n\\toprule\nStations & Rollout & RHEA-S$-$rollout [95\\% CI] & RHEA-L$-$rollout [95\\% CI]"
+                + (" & \\multicolumn{3}{c}{Model steps per decision (k)}" if cs else "") + " \\\\\n")
+        if cs:
+            f.write("\\cmidrule(l){5-7}\n & & & & Rollout & RHEA-S & RHEA-L \\\\\n")
+        f.write("\\midrule\n")
         for inst, r in rh.items():
             L = SCALE_LETTER[inst]
             mac[f"cecRhRoll{L}"] = pt(r["rollout"], 1)
@@ -831,18 +839,49 @@ def cec_evo_outputs(runs, tdir, root):
                     continue
                 mac[f"cecRh{cfg}Delta{L}"], mac[f"cecRh{cfg}Lo{L}"], mac[f"cecRh{cfg}Hi{L}"] = pt(-x["delta"], 1), pt(-x["hi"], 1), pt(-x["lo"], 1)
                 cells.append(f"{pt(-x['delta'], 1)} [{pt(-x['hi'], 1)}; {pt(-x['lo'], 1)}]")
+            if cs and inst in cs:
+                cells += [pt(cs[inst][tg]["model_steps_per_decision"] / 1000, 1) for tg in ("rollout", "rhea_s", "rhea_l")]
             f.write(tex_num(f"{AN30.N_ST[inst]} & {pt(r['rollout'], 1)} & " + " & ".join(cells) + " \\\\\n"))
         f.write("\\bottomrule\n\\end{tabular}\n")
-    cp = Path(runs) / "cost_steps.json"
-    if cp.exists():
-        cs = json.loads(cp.read_text(encoding="utf-8"))
+    if cs:
         for inst, L in SCALE_LETTER.items():
             if inst in cs:
                 for tag, k in (("rollout", "Roll"), ("rhea_s", "RheaS"), ("rhea_l", "RheaL")):
                     mac[f"cecCost{k}{L}"] = pt(cs[inst][tag]["model_steps_per_decision"] / 1000, 1)
                     mac[f"cecMs{k}{L}"] = pt(cs[inst][tag]["ms_per_decision"], 0)
+    cfg = AN30.cec_es_config(runs)
+    if cfg:
+        for key, nm in (("pop", "Pop"), ("sigma", "Sig"), ("lr", "Lr"), ("bs", "Bs")):
+            vals = [c[key] for c in cfg.values()]
+            d = 0 if key in ("pop", "bs") else 2
+            mac[f"cecEs{nm}Min"], mac[f"cecEs{nm}Max"] = pt(min(vals), d), pt(max(vals), d)
     if cal:
         mac["cecCalMaxAbs"] = pt(max(abs(c["delta"]) for c in cal.values()), 2)
+    cv = AN30.cec_curves(runs)
+    if cv and all(c["dqn"] is not None and c["es"] for c in cv.values()):
+        fig, axes = plt.subplots(1, len(cv), figsize=(7.2, 2.3), sharey=False)
+        axes = np.atleast_1d(axes)
+        shades = {"500k": "#c9c3f0", "2M": "#9085e9", "8M": "#6a5bd0", "32M": "#4a3aa7"}
+        for ax, (inst, c) in zip(axes, cv.items()):
+            for tag, st in c["es"].items():
+                ax.plot(st["steps"], st["mean"], color=shades[tag], lw=1.1, marker="o", ms=2.2, label=f"ES {tag}")
+            d = c["dqn"]
+            ax.fill_between(d["steps"], d["lo"], d["hi"], color=CEC_COL["dqn"], alpha=0.18, lw=0)
+            ax.plot(d["steps"], d["mean"], color=CEC_COL["dqn"], lw=1.2, label="DQN")
+            ax.set_xscale("log")
+            ax.set_xlabel("simulator steps")
+            ax.set_title(f"{c['n_st']} stations", loc="left")
+            ax.yaxis.grid(True, color=GRID, lw=0.5)
+            ax.set_axisbelow(True)
+        axes[0].set_ylabel("validation unmet demand per day")
+        h, lb = axes[0].get_legend_handles_labels()
+        fig.legend(h, lb, ncol=5, loc="upper center", bbox_to_anchor=(0.5, 0.0), frameon=False, fontsize=6.5)
+        fig.tight_layout()
+        figdir = root / "figuras_en"
+        figdir.mkdir(exist_ok=True)
+        for ext in ("pdf", "png"):
+            fig.savefig(figdir / f"fig_cec_curves.{ext}", bbox_inches="tight")
+        plt.close(fig)
     sel = [i for i in ("cb4wd", "cb12wd", "cb30wd") if i in bud and len(bud[i]["budgets"]) >= 2]
     if sel:
         fig, axes = plt.subplots(1, len(sel), figsize=(7.2, 2.3), sharey=False)
@@ -914,6 +953,13 @@ def check_claims_cec(runs):
     out.append((all(D[i]["heur"].get("src") == "cma" for i in S), "CEC: a melhor heurística por validação é uma solução do CMA-ES em todas as escalas"))
     out.append((all(C[i]["es_vs_heur"]["hi"] < 0 for i in S), "CEC: o ES (500 mil passos) é pior que a heurística de referência nas 5 escalas"))
     out.append((all(C[i]["es_vs_dqn"]["hi"] < 0 for i in S), "CEC: o ES é pior que o DQN nas 5 escalas"))
+    out.append((all((D[i]["stay"]["real"] - D[i]["heur"]["real"]) / D[i]["stay"]["real"] < (D[i]["stay"]["mean"] - D[i]["heur"]["mean"]) / D[i]["stay"]["mean"] for i in S),
+                "CEC dias reais: a redução da heurística de referência vs parada é menor que no teste sintético nas 5 escalas"))
+    out.append((all(D[i]["dqn"]["real"] < D[i]["heur"]["real"] for i in S), "CEC dias reais: o DQN fica abaixo da heurística de referência nas 5 escalas"))
+    out.append((all(D[i]["dqn"]["real"] < D[i]["rollout"]["real"] + 2.0 for i in ("cb4wd", "cb8wd", "cb12wd")) and all(D[i]["dqn"]["real"] > D[i]["rollout"]["real"] + 5.0 for i in ("cb20wd", "cb30wd")),
+                "CEC dias reais: até 12 est. o DQN fica abaixo ou a menos de 2 do rollout; em 20 e 30 est. o rollout está à frente por > 5"))
+    out.append((D["cb4wd"]["es"]["real"] < D["cb4wd"]["heur"]["real"] and all(D[i]["es"]["real"] > D[i]["heur"]["real"] - 1.5 for i in ("cb8wd", "cb12wd", "cb20wd", "cb30wd")),
+                "CEC dias reais: o ES só fica melhor que a heurística de referência em 4 est. (nas demais, não melhora em mais de 1,5)"))
     for i in ("cb12wd", "cb20wd", "cb30wd"):
         c = C[i].get("dqn2m_vs_rollout")
         out.append((c is not None and c["hi"] < 0, f"CEC {i}: o DQN com 4× o orçamento continua atrás do rollout (IC exclui 0)"))
@@ -949,6 +995,15 @@ def check_claims_cec(runs):
         c = C[i].get("dqn2m_vs_rhea_l")
         got = None if c is None else ("dqn2m" if c["lo"] > 0 else ("rhea" if c["hi"] < 0 else "empate"))
         out.append((got == wl[i], f"CEC {i}: DQN 4× × RHEA-L = {got} (texto: {wl[i]})"))
+    cv = AN30.cec_curves(runs)
+    out.append((all(c["dqn"] is not None and "32M" in c["es"] and c["dqn"]["mean"][-1] < c["es"]["32M"]["mean"][-1] for c in cv.values()) and len(cv) == 3,
+                "CEC: a validação final do DQN (500 mil passos) é menor que a do ES com 32M passos em 4, 12 e 30 est."))
+    cf = AN30.cec_es_config(runs)
+    out.append((len({c["pop"] for c in cf.values()}) == 1, "CEC: o ES escolheu a mesma população em todas as escalas (texto: 'population X at every scale')"))
+    for i in ("cb12wd", "cb30wd"):
+        b_ = bud.get(i)
+        ok = b_ is not None and "32M" in b_["budgets"] and 1.0 <= b_["budgets"]["32M"]["secs"] / b_["dqn_secs"] <= 2.5
+        out.append((ok, f"CEC {i}: o treino do ES com 32M passos leva de 1 a 2,5× o tempo do DQN com 500 mil (tempo medido em carga variável)"))
     cp = Path(runs) / "cost_steps.json"
     if cp.exists():
         cs = json.loads(cp.read_text(encoding="utf-8"))

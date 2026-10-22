@@ -727,13 +727,15 @@ def cec_es_budget(runs, scales=SCALES):
             continue
         dq = [r for r in rows_of(Path(runs) / ("final_primary.jsonl" if inst in BASES else f"scale_{inst}.jsonl")) if r["method"] == "dqn" and r.get("instance", inst) == inst]
         dqx = np.array([r["test_mean"] for r in dq], float)
-        rec = {"n_st": N_ST[inst], "heur": -float(ref["test_mean"]), "dqn": -float(dqx.mean()) if len(dqx) else float("nan"), "budgets": {}, "reached": None}
+        rec = {"n_st": N_ST[inst], "heur": -float(ref["test_mean"]), "dqn": -float(dqx.mean()) if len(dqx) else float("nan"), "budgets": {}, "reached": None,
+               "dqn_secs": float(np.mean([r.get("train_seconds", float("nan")) for r in dq])) if dq else float("nan")}
         for tag, pat in ES_BUDGETS:
-            xs = np.array([r["test_mean"] for r in rows_of(Path(runs) / pat.format(inst)) if r["method"] == "es"], float)
+            er = [r for r in rows_of(Path(runs) / pat.format(inst)) if r["method"] == "es"]
+            xs = np.array([r["test_mean"] for r in er], float)
             if len(xs) < 2:
                 continue
             lo, hi = ci_t(xs)
-            b = {"n": len(xs), "mean": -float(xs.mean()), "lo": -float(hi), "hi": -float(lo), "steps": ES_STEPS[tag]}
+            b = {"n": len(xs), "mean": -float(xs.mean()), "lo": -float(hi), "hi": -float(lo), "steps": ES_STEPS[tag], "secs": float(np.mean([r.get("train_seconds", float("nan")) for r in er]))}
             hd = xs - float(ref["test_mean"])                                # reward: positivo favorece o ES contra a heurística de referência (teste inteiro)
             hlo, hhi = ci_t(hd)
             b.update({"vs_heur": float(hd.mean()), "vs_heur_lo": float(hlo), "vs_heur_hi": float(hhi)})
@@ -744,6 +746,43 @@ def cec_es_budget(runs, scales=SCALES):
                     rec["reached"] = tag
             rec["budgets"][tag] = b
         out[inst] = rec
+    return out
+
+
+def _curve_stats(rows):
+    """Curva de validação (demanda perdida, positiva) média por ponto de avaliação, com IC95% t entre sementes; os pontos de avaliação têm de coincidir entre as sementes."""
+    rows = [r for r in rows if r.get("curve")]
+    if not rows:
+        return None
+    n = min(len(r["curve"]) for r in rows)
+    steps = np.array([np.mean([r["curve"][k]["steps"] for r in rows]) for k in range(n)])
+    v = np.array([[-r["curve"][k]["val"] for k in range(n)] for r in rows], float)
+    lo, hi = zip(*[ci_t(v[:, k]) if len(rows) >= 2 else (v[0, k], v[0, k]) for k in range(n)])
+    return {"n": len(rows), "steps": steps, "mean": v.mean(axis=0), "lo": np.array(lo), "hi": np.array(hi)}
+
+
+def cec_curves(runs, scales=("cb4wd", "cb12wd", "cb30wd")):
+    """Curvas de validação durante o treino: DQN (500 mil passos) e ES (cada orçamento), demanda perdida na validação × passos de simulador; unidade = semente."""
+    out = {}
+    for inst in scales:
+        dq = [r for r in rows_of(Path(runs) / ("final_primary.jsonl" if inst in BASES else f"scale_{inst}.jsonl")) if r["method"] == "dqn" and r.get("instance", inst) == inst]
+        rec = {"n_st": N_ST[inst], "dqn": _curve_stats(dq), "es": {}}
+        for tag, pat in ES_BUDGETS:
+            st = _curve_stats([r for r in rows_of(Path(runs) / pat.format(inst)) if r["method"] == "es"])
+            if st is not None:
+                rec["es"][tag] = st
+        out[inst] = rec
+    return out
+
+
+def cec_es_config(runs, scales=SCALES):
+    """Configurações do ES escolhidas em validação (pool de 16) por escala."""
+    out = {}
+    for inst in scales:
+        p = Path(runs) / f"tuned_es_{inst}.json"
+        if p.exists():
+            d = load_json(p)["es"]
+            out[inst] = {"cfg_id": d["cfg_id"], **d["cfg"], "val": -float(d["val_mean"])}
     return out
 
 

@@ -1,0 +1,253 @@
+% IEEE CEC 2027 submission draft (8 pages incl. references, A4, double column, 10 pt Times, double-anonymous).
+% All numbers come from numeros.tex and tabelas/*.tex, GENERATED from runs/*.jsonl by scripts/25_make_report.py --lang en.
+\documentclass[conference,a4paper]{IEEEtran}
+\usepackage{cite}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{xspace}
+\usepackage{url}
+\usepackage[T1]{fontenc}
+\usepackage{microtype}
+\xspaceaddexceptions{\% ] ) ;}
+\input{numeros}
+\input{numeros_cec}
+\graphicspath{{../figuras_en/}}
+\newcommand{\TODO}[1]{\textbf{[TODO: #1]}}
+
+\begin{document}
+\title{Evolutionary, Learning and Planning Methods for Dynamic Bike Repositioning: A Controlled Comparison}
+\author{\IEEEauthorblockN{Anonymous Authors}}
+\maketitle
+
+\begin{abstract}
+Dynamic bike repositioning is a stochastic sequential decision problem usually attacked with reinforcement learning (RL) or lookahead planning; evolutionary computation
+(EC) offers alternatives that are rarely compared with them under one protocol. On Citi Bike instances with 4 to 30 stations and 24 real days, we compare calibrated
+heuristics, a DQN, a dual-policy DQN, a Monte Carlo rollout and three EC methods: CMA-ES calibration of the heuristics, OpenAI-ES neuroevolution of the DQN's network and
+a rolling horizon evolutionary algorithm (RHEA). Training seeds are the unit of analysis, hyperparameters are chosen on validation only, budgets are counted in simulator
+steps, and every number is generated from run logs. CMA-ES matches grid-calibrated heuristics (differences below 1\%). Neuroevolution is the weakest method at every scale:
+even with 64$\times$ the DQN's simulator steps it never reaches the DQN and, within the noise of 3 seeds, only approaches the heuristic. A larger RHEA beats the
+500k-step DQN at every scale and the rollout at 4 stations, but falls behind the rollout as stations grow. The DQN cuts unmet demand by \cecRDqnA\% at 4 stations but
+only \cecRDqnE\% at 30, and planners that query the demand model overtake it from 12 stations on. We report negative results and the study's limits.
+\end{abstract}
+
+\begin{IEEEkeywords}
+bike sharing, dynamic repositioning, evolution strategies, CMA-ES, rolling horizon evolution, deep Q-learning, simulation-based optimization
+\end{IEEEkeywords}
+
+\section{Introduction}
+Station-based bike-sharing systems drift out of balance: empty stations cannot serve rentals and full stations cannot accept returns. Operators move bikes with
+vehicles, and the \emph{dynamic} version of the problem---deciding, as demand unfolds, where the vehicle goes next and how many bikes it loads or unloads---is a
+stochastic sequential decision problem. The literature attacks it with approximate dynamic programming, lookahead policies and, more recently, reinforcement learning
+(RL)~\cite{seo2022,liang2024,brinkmann2019,guo2024}. Evolutionary computation (EC) offers three natural alternatives that are rarely compared against these
+methods under a single protocol: evolutionary \emph{policy search} (neuroevolution)~\cite{salimans2017,such2017,bai2023}, evolutionary \emph{calibration} of
+parametric heuristics~\cite{hansen2001}, and evolutionary \emph{online planning} with a model (rolling horizon evolution)~\cite{perezliebana2013}.
+
+This paper compares them in a controlled way. On instances calibrated with real Citi Bike trips (4--30 stations, plus 24 real test days), we evaluate (i) greedy and
+threshold heuristics calibrated by grid search and by CMA-ES; (ii) value-based RL (DQN) and a dual-policy variant adapted from DPRL~\cite{liang2024}; (iii) neuroevolution
+with an evolution strategy (ES) on the same network as the DQN; and (iv) model-based planners, a Monte Carlo rollout and a rolling horizon evolutionary algorithm (RHEA).
+All learners share one protocol: the unit of analysis is the training seed, hyperparameters are chosen on validation only, the test set is touched once, and every
+budget is counted in simulator steps~\cite{henderson2018,agarwal2021}. Our contributions are: (a)~the comparison itself, including negative results;
+(b)~evidence on how each family scales from 4 to 30 stations and on its dependence on the training budget; (c)~a test of three natural explanations for the decline of the
+RL advantage with scale (network capacity, training budget and action-space size); and (d)~a verified, reproducible protocol with all numbers generated from run logs.
+
+\section{Related Work}
+\textbf{Static and dynamic repositioning.} Operations research treats overnight repositioning as a pickup-and-delivery routing problem with complexity
+results~\cite{benchimol2011}, mixed-integer formulations~\cite{raviv2013,dellamico2014} and cluster-first heuristics~\cite{schuijbroek2017}. For the dynamic case,
+Ghosh \emph{et al.}~\cite{ghosh2017} optimize routes against expected future demand, and Brinkmann \emph{et al.}~\cite{brinkmann2015,brinkmann2019} study short-term
+strategies and dynamic lookahead policies.
+\textbf{RL.} Seo \emph{et al.}~\cite{seo2022} combine approximate dynamic programming and RL; Liang \emph{et al.}~\cite{liang2024} compare single- and dual-policy DQN
+(inventory and routing); Guo \emph{et al.}~\cite{guo2024} use combinatorial RL; Pan \emph{et al.}~\cite{pan2019} use deep RL for pricing in dockless systems.
+\textbf{Evolutionary methods.} Evolution strategies are a scalable alternative to policy-gradient and Q-learning methods~\cite{salimans2017}, genetic algorithms can train
+deep policies~\cite{such2017}, and the field is surveyed in~\cite{bai2023}. Hybrids couple evolution with gradient-based RL, as in ERL~\cite{khadka2018} and CEM-RL~\cite{pourchot2019}; we
+do not study them. CMA-ES~\cite{hansen2001,hansen2016} is a standard derivative-free optimizer for
+low-dimensional parameters, and RHEA~\cite{perezliebana2013} evolves action sequences online against a forward model. To our knowledge these families have not been
+compared with RL and Monte Carlo planning on bike repositioning under a common budget and statistical protocol; we do not reproduce the cited systems (simulators, data
+and metrics differ) and our DPRL-style agent is an adaptation.
+
+\section{Problem and Instances}
+A single vehicle (capacity 20) visits $n$ stations over one operating day (06:00--22:00) in 32 intervals of 30 minutes. At each interval it chooses a destination and a
+stock change at the current station ($\pm 5$, $\pm 10$ or 0 bikes), so there are $5n$ flat actions with a validity mask. Rentals and returns follow independent Poisson
+processes per station and interval; the reward is the negative number of unmet rentals and returns. Every move costs one interval (there is no routing).
+Rates $\lambda$ are the means of weekdays in the training weeks of Citi Bike (January--June 2024)~\cite{citibike}, with no scale factor; splits are by whole weeks.
+The 4-, 8- and 12-station instances use fixed station sets; the 20- and 30-station instances add the highest-volume stations. Test uses 1\,000 scenarios sampled
+from the model and, separately, 24 real weekdays from the test weeks (initial occupancy unknown, set to $50\%\pm 2$).
+
+\section{Methods}
+\textbf{Calibrated heuristics.} A greedy policy (thresholds $lo,hi$ and maximum step $d$) and a target-occupancy policy (target, thresholds, step, distance bonus). Grid search
+covers both families (grids extended until the optimum is interior). The \emph{reference heuristic} of the study is the single policy with the best \emph{validation}
+reward among the grid-calibrated ones and the CMA-ES runs below; the test set plays no part in the choice.
+\textbf{CMA-ES calibration.} The same parameters (3 and 5) are optimized by CMA-ES~\cite{hansen2001} through a logistic box encoding with 200--203 evaluations (whole generations) on the (fixed)
+validation scenarios; each run's best-on-validation point is tested once.
+\textbf{DQN.} A $64$--$64$ network with action masking, replay, target network and Double DQN~\cite{mnih2015,vanhasselt2016}.
+\textbf{Dual policy.} An adaptation of DPRL~\cite{liang2024}: two DQNs with shared state, one choosing the stock change (no time elapses) and one choosing the destination
+in the post-inventory state; heads have 5 and $n$ outputs instead of $5n$. It uses the flat DQN's hyperparameters, untuned.
+\textbf{ES (neuroevolution).} An OpenAI-style evolution strategy~\cite{salimans2017} on the \emph{same} $64$--$64$ network: antithetic sampling, centered ranks,
+Adam, and the same scenarios for all members of a generation (common random numbers). The configuration chosen on validation had population \cecEsPopMax\ at every
+scale, $\sigma$ from \cecEsSigMin\ to \cecEsSigMax, learning rate \cecEsLrMin--\cecEsLrMax\ and \cecEsBsMin--\cecEsBsMax\ scenarios per generation.
+\textbf{Rollout.} For every valid action, the return of executing it and then following the base heuristic for $h$ decisions, averaged over $K$ futures sampled from the
+\emph{model}~\cite{bertsekas1997}; $(h,K)=(3,64)$; the base heuristic is the best grid-calibrated one on validation.
+\textbf{RHEA.} At each decision, a population of 4-action sequences is evolved (tournament selection, uniform crossover, per-gene mutation, elitism, shift buffer) against $K$
+model futures~\cite{perezliebana2013}; horizon $L=4$ and two fixed, untuned configurations: S (population 16, 10 generations, 8 futures) and L (24, 15, 16). Their cost
+per decision, in model steps, is in Table~\ref{tab:rhea}.
+
+\section{Experimental Protocol}
+The unit of analysis is the training seed (10 per learner and scale; 5 for the 2M-step and 20/30-station runs; 3 for the longest ES budgets); evaluation episodes are not independent samples.
+Hyperparameters of every learner come from a pool of 16 configurations scored on validation (2 tuning seeds, 200k steps), and the last checkpoint is reported.
+All learners get the same budget in simulator steps (500k, plus 2M where stated); validation episodes during training are not counted. We report means with 95\% $t$
+confidence intervals over seeds and Welch contrasts between independent runs; equivalence is claimed only with TOST~\cite{lakens2017}. Deterministic references (heuristics,
+rollout, RHEA) are single values per scale, so contrasts against them are computed per seed. Deviations from the pre-registered protocol are logged in a change log before the runs, except where Section~VII says otherwise.
+
+\section{Results}
+\subsection{Main comparison across scales}
+Table~\ref{tab:main} gives the unmet demand per day on the synthetic test set (the first \cecN\ test scenarios, identical for every method: the planners were run
+only on these) and Fig.~\ref{fig:scale} the reduction relative to the reference heuristic, on the synthetic set and on the 24 real days. Contrasts below are in unmet
+demand per day, positive favouring the first method, with 95\% CIs over seeds in brackets.
+
+\begin{table*}[t]
+\centering\scriptsize\setlength{\tabcolsep}{4pt}
+\caption{Unmet demand per day (lower is better), first \cecN\ synthetic test scenarios; mean$\pm$95\% $t$ CI over training seeds for learners, single value for
+deterministic methods. 500k simulator steps unless marked; seeds: 10 (4--12 stations) or 5 (20, 30) for DQN, 10 for ES and CMA-ES, 5 for all 2M-step runs and for the
+dual policy.}
+\label{tab:main}
+\input{tabelas/cec_unmet}
+\end{table*}
+
+\begin{figure*}[t]
+\centering\includegraphics[width=0.85\textwidth]{fig_cec_scale}
+\caption{Reduction in unmet demand relative to the reference heuristic, by number of stations: (a) synthetic test (error bars: 95\% CI over seeds; heuristics and
+planners are single values), (b) 24 real days (learners: seed means; no error bars).}
+\label{fig:scale}
+\end{figure*}
+
+\textbf{Learning and planning beat calibrated heuristics, with a shrinking margin.} DQN reduces unmet demand by \cecRDqnA, \cecRDqnB, \cecRDqnC, \cecRDqnD\ and
+\cecRDqnE\% at 4, 8, 12, 20 and 30 stations (the CI of its advantage over the reference excludes 0 at every scale), and four times more steps raises this to
+\cecRDqnXA, \cecRDqnXB, \cecRDqnXC, \cecRDqnXD\ and \cecRDqnXE\%. The reduction falls monotonically with scale, as does the rollout's (\cecRRollA\% to \cecRRollE\%).
+\textbf{Planners with the true model overtake DQN with scale.} The rollout queries the true demand model at decision time, which no learner does. DQN's advantage over
+it is \cecCDqnVsRollA\ [\cecCDqnVsRollLoA; \cecCDqnVsRollHiA] at 4 stations but \cecCDqnVsRollC\ [\cecCDqnVsRollLoC; \cecCDqnVsRollHiC] at 12 and \cecCDqnVsRollE\
+[\cecCDqnVsRollLoE; \cecCDqnVsRollHiE] at 30; at 8 stations it trails (\cecCDqnVsRollB\ [\cecCDqnVsRollLoB; \cecCDqnVsRollHiB]) and only ties with 4$\times$ the budget
+(\cecCDqnXVsRollB\ [\cecCDqnXVsRollLoB; \cecCDqnXVsRollHiB]).
+\textbf{A factorized action space helps in the middle.} The dual-policy agent (untuned) improves on the flat DQN at 8, 12 and 20 stations (advantage \cecCDprlVsDqnB,
+\cecCDprlVsDqnC\ and \cecCDprlVsDqnD) and ties at 4 and 30 (CIs include 0). Against the rollout it wins at 4 and 8 stations, ties at 12 and loses at 20 and 30.
+
+\subsection{Evolutionary calibration of the heuristics}
+CMA-ES, with 200--203 evaluations per run on the validation scenarios, finds heuristics that are practically indistinguishable from the grid-calibrated ones
+(Table~\ref{tab:calib}): the grid$-$CMA-ES difference on the full 1\,000-scenario test set is at most \cecCalMaxAbs\ unmet demand per day, below 1\% of the heuristic's
+unmet demand at every scale. It is statistically positive for CMA-ES at 8 and 12 stations, equivalent by TOST ($\delta=0.5$) at 4 and 30, and inconclusive at 20.
+Because the best-on-validation policy is a CMA-ES solution at every scale, the reference heuristic in Table~\ref{tab:main} is that run.
+
+\begin{table}[t]
+\centering\scriptsize\setlength{\tabcolsep}{2.5pt}
+\caption{Grid versus CMA-ES calibration, unmet demand per day on the full test set; CMA-ES: mean$\pm$95\% CI over 10 runs; difference = grid $-$ CMA-ES (positive: CMA-ES
+better); ``equivalent'': TOST, $\delta=0.5$; ``inconclusive'': CI includes 0 and TOST does not reject.}
+\label{tab:calib}
+\input{tabelas/cec_calib}
+\end{table}
+
+\subsection{Neuroevolution of the policy}
+With the same network, step budget and 16-configuration tuning pool as the DQN, OpenAI-ES is the worst method at every scale: it is worse than the reference heuristic
+(per-seed CIs exclude 0 at all five scales) and its advantage over the DQN is \cecCEsVsDqnA\ [\cecCEsVsDqnLoA; \cecCEsVsDqnHiA] at 4, \cecCEsVsDqnC\ [\cecCEsVsDqnLoC;
+\cecCEsVsDqnHiC] at 12 and \cecCEsVsDqnE\ [\cecCEsVsDqnLoE; \cecCEsVsDqnHiE] at 30 stations (negative: the DQN is better). Four times the steps does not change this
+(Table~\ref{tab:main}). We therefore extended the budget to 8M and 32M steps (16$\times$ and 64$\times$ the DQN's) at 4, 12 and 30 stations, with 3 seeds and the
+configuration chosen at 200k steps (Fig.~\ref{fig:esbudget}). Unmet demand falls only slowly. At 30 stations, ES at 32M steps cannot be distinguished from the reference
+heuristic (advantage \cecBudThirtytwoHE\ [\cecBudThirtytwoHLoE; \cecBudThirtytwoHHiE]; the CI includes 0, which is not an equivalence claim) but is still behind the DQN
+(advantage \cecBudThirtytwoVsE\ [\cecBudThirtytwoVsLoE; \cecBudThirtytwoVsHiE]). At 12 stations it remains worse than both the heuristic (advantage \cecBudThirtytwoHC\
+[\cecBudThirtytwoHLoC; \cecBudThirtytwoHHiC]) and the DQN. At 4 stations the CI of the ES advantage over the DQN includes 0 only at 32M (\cecBudThirtytwoVsA\ [\cecBudThirtytwoVsLoA;
+\cecBudThirtytwoVsHiA]): this reflects 3 seeds with a large spread (unmet demand \cecBudThirtytwoA$\pm$\cecBudThirtytwoHwA\ against \cecBudDqnA\ for the DQN), not parity.
+Fig.~\ref{fig:curves} shows why: the DQN's validation curve reaches in 500k steps a level that the ES curves do not reach in 32M. Measured in wall-clock time the gap is smaller,
+because ES has no gradient updates: a 32M-step ES run took \cecTimeThirtytwoC\ and \cecTimeThirtytwoE\ minutes at 12 and 30 stations against \cecTimeDqnC\ and \cecTimeDqnE\ for a
+500k-step DQN (\cecTimeThirtytwoA\ against \cecTimeDqnA\ at 4 stations; timings from a shared machine, so indicative), which does not change the ordering.
+We did not investigate the cause; plausible reasons, which we label as hypotheses, are that a weight-space update fed by the noisy returns of a few simulated days has no
+per-step credit assignment and so needs many more episodes, and that an argmax policy is invariant to the scale of its output scores, so many perturbations change nothing.
+
+\begin{figure*}[t]
+\centering\includegraphics[width=0.85\textwidth]{fig_cec_es_budget}
+\caption{OpenAI-ES on the DQN's network: unmet demand versus simulator steps (mean$\pm$95\% CI over seeds; 10 seeds at 500k, 5 at 2M, 3 at 8M and 32M), against the
+DQN at 500k steps and the reference heuristic.}
+\label{fig:esbudget}
+\end{figure*}
+
+\begin{figure*}[t]
+\centering\includegraphics[width=0.85\textwidth]{fig_cec_curves}
+\caption{Validation unmet demand during training versus simulator steps: DQN (500k steps; mean and 95\% CI over seeds) and ES at each budget (mean over seeds; each budget is a
+separate set of runs with its own evaluation points).}
+\label{fig:curves}
+\end{figure*}
+
+\subsection{Evolutionary online planning}
+Table~\ref{tab:rhea} compares RHEA with the rollout on the same \cecN\ scenarios. The larger configuration, RHEA-L, uses fewer unmet rentals/returns than the rollout at 4
+stations (difference \cecRhLDeltaA\ [\cecRhLLoA; \cecRhLHiA] per day), is level at 8 (\cecRhLDeltaB\ [\cecRhLLoB; \cecRhLHiB]) and falls behind at 12, 20 and 30
+(\cecRhLDeltaC, \cecRhLDeltaD\ and \cecRhLDeltaE); RHEA-S beats the rollout at 4 stations only. A cost argument, which we did not test by ablation, is consistent
+with this pattern: the rollout enumerates every valid first action, so its cost grows from \cecCostRollA{}k model steps per decision at 4 stations to \cecCostRollE{}k at
+30, whereas RHEA's cost is fixed by its population (S: \cecCostRheaSA{}k; L: \cecCostRheaLA{}k) while its search space grows as $(5n)^L$. The comparison is therefore not
+compute-matched: RHEA-L spends more than the rollout at 4 stations and less at 30. Against the learners, RHEA-L has lower unmet demand than the 500k-step DQN at every
+scale (CIs exclude 0), but it only ties the DQN trained for 2M steps at 8, 12 and 30 stations, is better at 4 and worse at 20; like the rollout it needs the demand model
+and about \cecMsRheaLC\ ms per decision in our implementation, against microseconds for a trained network.
+
+\begin{table*}[t]
+\centering\scriptsize\setlength{\tabcolsep}{4pt}
+\caption{RHEA minus rollout, unmet demand per day on the same \cecN\ scenarios (paired; 95\% bootstrap CI over scenarios); negative: RHEA better. Cost: simulator
+steps of the demand model per decision (thousands), counted exactly on one test scenario (rollout: $h=3$, $K=64$; the rollout's cost grows with the number of valid
+actions, RHEA's is fixed by its population).}
+\label{tab:rhea}
+\input{tabelas/cec_rhea}
+\end{table*}
+
+\subsection{What limits RL at scale?}
+The shrinking advantage of RL admits three natural explanations, which we tested one at a time. \emph{Capacity:} widening the DQN's hidden layers to 128 or 256 units
+makes it worse, not better, at 12 stations (unmet demand \archBaseC\ with 64--64 against \archWideC\ and \archWiderC; Welch CIs of the reward change
+[\archWideDeltaLoC; \archWideDeltaHiC] and [\archWiderDeltaLoC; \archWiderDeltaHiC]) and at 30 stations (\archBaseE\ against \archWideE\ and \archWiderE), with the other
+hyperparameters untouched---a negative result that does not exclude a well-tuned wide network. \emph{Budget:} four times more steps lowers unmet demand at every scale
+but leaves the DQN behind the rollout at 12, 20 and 30 stations. \emph{Action-space size:} factorizing the action into stock change and destination (dual policy) helps
+at 8--20 stations but not at 30. None of the three closes the gap, and since the 20- and 30-station instances also add high-volume stations, scale and volume are
+confounded. Finally, a clairvoyant planner that knows the realized demand cuts unmet demand to only \clvA, \clvB\ and \clvC\ per day at 4, 8 and 12 stations (stay:
+\clvStayA, \clvStayB, \clvStayC): almost all unmet demand is avoidable with foresight, so this bound is loose and says little about the distance to the best
+\emph{non-anticipative} policy.
+
+\subsection{Real days}
+Table~\ref{tab:real} gives the unmet demand on the 24 real weekdays of the test weeks (one value per method and scale, learners averaged over seeds; descriptive only).
+Heuristics transfer worst: the reference heuristic saves less relative to staying put on real days than on synthetic scenarios at every scale (Tables~\ref{tab:main}
+and~\ref{tab:real}), whereas the learners keep most of their advantage. Up to 12 stations the DQN is at or below the rollout (\cecRealDqnA\ against \cecRealRollA\ at 4
+stations) and at 20 and 30 stations the rollout is clearly ahead (\cecRealRollE\ against \cecRealDqnE\ at 30). ES is no better than the reference heuristic except at 4
+stations (\cecRealEsA\ against \cecRealRefA).
+
+\begin{table*}[t]
+\centering\scriptsize\setlength{\tabcolsep}{4pt}
+\caption{Unmet demand per day on the 24 real test weekdays (initial occupancy unknown, set to $50\%\pm2$); no confidence intervals (24 days; planners are single runs).}
+\label{tab:real}
+\input{tabelas/cec_real}
+\end{table*}
+
+\section{Discussion and Limitations}
+\textbf{Where evolution helps.} The three evolutionary families behave very differently. Calibrating a handful of heuristic parameters with CMA-ES is as good as grid
+search and needs a box and a step size instead of a hand-extended grid. Online evolutionary planning is a strong model-based option when its population is large enough:
+RHEA-L has lower unmet demand than the 500k-step DQN at every scale. But a fixed population faces a search space that grows as $(5n)^L$, whereas the rollout, which
+enumerates the first actions and relies on a calibrated base heuristic, was better in the regime we tested (12--30 stations); we did not isolate which of these two
+features matters. Weight-space neuroevolution is by far the
+most sample-hungry: at 64$\times$ the DQN's budget it at best approaches the heuristic.
+\textbf{Practical reading.} With a demand model at decision time and latency of \cecMsRollA\ ms (rollout, 4 stations) to \cecMsRollE\ ms (rollout, 30 stations)
+per decision in our Python implementation (shared CPU), model-based planners are at least as good as every learner from 12 stations on; where decisions must take microseconds or no model exists, a
+DQN (the dual-policy variant at 8--20 stations) is the practical choice; neuroevolution of network weights is not competitive at these budgets.
+
+\textbf{Limitations.} (i)~One city, one vehicle, and every move costs one interval (no routing time), so the results say nothing about multi-vehicle or
+travel-time-aware repositioning. (ii)~The simulator and the demand model are ours and were not independently audited; learners are trained and tested on samples of the
+same Poisson model, and the 24 real days are descriptive (no CIs). (iii)~The planners (rollout, RHEA) query the true demand model at decision time and no learner does,
+so their advantage is not an advantage of the method class alone. (iv)~ES and DQN were tuned in a 16-configuration pool at 200k steps, the dual policy and RHEA were not
+tuned, and long-budget ES runs reuse the 200k-step configuration; a better-tuned ES or RHEA could narrow the gaps. (v)~Seeds: 10 for most 4--12 station results, but 5 at
+20 and 30 stations and 3 for the longest ES budgets. (vi)~The 20- and 30-station instances add stations of higher volume, so size and volume are confounded. (vii)~Analysis
+choices made after seeing results (e.g., the reference-heuristic rule) are logged with the data; the study is pre-registered only in its protocol.
+
+\section{Conclusion}
+Under one protocol, evolution was useful where the search space is small or a model is available and not where it must learn a policy from scratch from sampled returns:
+CMA-ES calibration matched grid search, RHEA was competitive as an online planner, and OpenAI-ES neuroevolution of the DQN's network was not competitive even with 64
+times the simulator steps. Reinforcement learning's margin over calibrated heuristics shrank from \cecRDqnA\% at 4 stations to \cecRDqnE\% at 30, and planners that query the
+true demand model were at least as good as any learner from 12 stations on, at a per-decision cost of the order of $10^{\latOrderC}$ times a trained network's. The main limits are a
+single city, a single vehicle without routing time, and untuned dual-policy and RHEA configurations. Future work includes tuning RHEA and ES for each scale, hybrids of evolution and learning (e.g., RHEA with a learned terminal value), learning
+the demand model instead of querying it, multi-vehicle routing and validation on operator data.
+
+\section*{Acknowledgment}
+\TODO{AI-use disclosure required by IEEE (text to be decided by the authors after reading the CEC AI/LLM policy).}
+
+\bibliographystyle{IEEEtran}
+\bibliography{refs}
+\end{document}
