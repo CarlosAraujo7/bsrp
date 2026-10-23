@@ -14,7 +14,7 @@ import numpy as np
 
 from .agents import DQN, PolicyGradient, QTabular
 from .dprl import DualDQN
-from .evo import ESAgent
+from .evo import ESAgent, SepCMAAgent
 from .env import BSRPEnv, Instance, ScenarioSet, evaluate, run_episode, sample_scenarios
 
 SALT = 20261012
@@ -46,6 +46,10 @@ def make_agent(method: str, inst: Instance, seed: int, **kw):
         kw = dict(kw)
         hidden = tuple(kw.pop("hidden", (64, 64)))
         return ESAgent(inst, hidden=hidden, rng_init=r_init, rng_sample=r_samp, **kw)
+    if method == "sepcma":                                     # P15: neuroevolução por sep-CMA-ES sobre a mesma rede; ver bsrp/evo.py
+        kw = dict(kw)
+        hidden = tuple(kw.pop("hidden", (64, 64)))
+        return SepCMAAgent(inst, hidden=hidden, rng_init=r_init, rng_sample=r_samp, **kw)
     if method == "pg":
         return PolicyGradient(inst, rng_init=r_init, rng_sample=r_samp, **kw)
     raise ValueError(method)

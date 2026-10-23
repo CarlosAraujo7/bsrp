@@ -760,9 +760,9 @@ def check_claims(R, A, S):
                 "P3b: o reajuste não altera detectavelmente o DQN (IC de Welch inclui 0) nas duas variantes"))
     return out
 
-CEC_KEY = {"stay": "Stay", "heur": "Ref", "grid": "Grid", "cma": "Cma", "rollout": "Roll", "rhea_s": "RheaS", "rhea_l": "RheaL", "rhea_s_v": "RheaSV", "rhea_l_v": "RheaLV", "dqnsame": "DqnSame", "dqn": "Dqn", "dqn2m": "DqnX", "dprl": "Dprl", "es": "Es", "es2m": "EsX"}
+CEC_KEY = {"stay": "Stay", "heur": "Ref", "grid": "Grid", "cma": "Cma", "rollout": "Roll", "rhea_s": "RheaS", "rhea_l": "RheaL", "rhea_s_v": "RheaSV", "rhea_l_v": "RheaLV", "dqnsame": "DqnSame", "dqn": "Dqn", "dqn2m": "DqnX", "dprl": "Dprl", "es": "Es", "es2m": "EsX", "sepcma": "Sep", "sepcma2m": "SepX"}
 CEC_COL = {"stay": "#898781", "heur": "#52514e", "cma": "#7c7b75", "rollout": "#eb6834", "rhea_s": "#f2a07d", "rhea_l": "#c24e1d", "rhea_s_v": "#59b89a", "rhea_l_v": "#1d7a5f", "dqn": "#2a78d6", "dqn2m": "#7fb2ee",
-           "dprl": "#8d5a2b", "es": "#4a3aa7", "es2m": "#9085e9"}
+           "dprl": "#8d5a2b", "es": "#4a3aa7", "es2m": "#9085e9", "sepcma": "#b0509a", "sepcma2m": "#d99bc9"}
 
 
 def cec_cell(r, key="mean", hw=True):

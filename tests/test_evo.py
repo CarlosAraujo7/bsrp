@@ -54,6 +54,72 @@ class TestCMAES(unittest.TestCase):
         self.assertEqual(EV.CMAES(np.zeros(5), popsize=12).lam, 12)
 
 
+def run_sep(f, x0, sigma0, evals, seed=0, popsize=None):
+    es = EV.SepCMAES(x0, sigma0, popsize, np.random.default_rng(seed))
+    best, n = np.inf, 0
+    while n < evals:
+        X = es.ask()
+        fx = np.array([f(x) for x in X])
+        es.tell(X, fx)
+        best = min(best, fx.min())
+        n += len(fx)
+    return best, es
+
+
+class TestSepCMAES(unittest.TestCase):
+    """P15: sep-CMA-ES converge em funções separáveis (inclusive mal condicionadas), é reprodutível e usa C diagonal."""
+
+    def test_sphere_and_separable_ill_conditioned_ellipsoid(self):
+        best, _ = run_sep(lambda x: float(x @ x), np.ones(20) * 3, 1.0, 12000)
+        self.assertLess(best, 1e-8)
+        scale = 10.0 ** (4 * np.arange(20) / 19)                                    # condição 1e8 na Hessiana, eixos alinhados
+        best, es = run_sep(lambda x: float(((scale * x) ** 2).sum()), np.ones(20), 1.0, 60000)
+        self.assertLess(best, 1e-6)
+        self.assertGreater(float(np.corrcoef(np.log(es.C), -np.log(scale))[0, 1]), 0.3)  # a diagonal aprendeu (parte d)a escala dos eixos: C ∝ 1/escala²
+
+    def test_reproducible_and_default_population(self):
+        f = lambda x: float(((x - 1) ** 2).sum())
+        b1, e1 = run_sep(f, np.zeros(5), 1.0, 500, seed=3)
+        b2, e2 = run_sep(f, np.zeros(5), 1.0, 500, seed=3)
+        self.assertEqual(b1, b2)
+        np.testing.assert_array_equal(e1.mean, e2.mean)
+        self.assertEqual(EV.SepCMAES(np.zeros(5)).lam, 4 + int(3 * np.log(5)))
+        es = EV.SepCMAES(np.zeros(100))
+        self.assertLessEqual(es.c1 + es.cmu, 1.0)
+
+    def test_agent_dispatch_budget_reproducibility_and_valid_actions(self):
+        val = E.sample_scenarios(INST, 4, np.random.default_rng(5))
+        out = []
+        for _ in range(2):
+            ag = T.make_agent("sepcma", INST, 7, hidden=[8, 8], pop=8, bs=2, sigma=0.05)
+            info = T.train(INST, ag, 7, 3000, val, 1000)
+            out.append(([c["val"] for c in info["curve"]], ag.theta.copy()))
+            gen_steps = 8 * 2 * E.N_INTERVALS
+            self.assertLess(info["episodes"] * E.N_INTERVALS, 3000 + gen_steps)
+            self.assertGreaterEqual(info["episodes"] * E.N_INTERVALS, 3000)
+        self.assertEqual(out[0][0], out[1][0])
+        np.testing.assert_array_equal(out[0][1], out[1][1])
+        env = E.BSRPEnv(INST).reset(E.sample_scenarios(INST, 1, np.random.default_rng(0))[0])
+        while not env.done:
+            a = ag.act(env)
+            self.assertTrue(env.valid_mask()[a])
+            env.step(a)
+
+    def test_agent_climbs_a_quadratic_fitness(self):
+        class Quad(EV.SepCMAAgent):
+            target = None
+
+            def _fitness(self, env, theta, scen):
+                return -float(((theta - self.target) ** 2).sum()), 32
+
+        ag = Quad(INST, hidden=(4,), pop=16, sigma=0.3, bs=1, rng_init=np.random.default_rng(0))
+        ag.target = ag.theta + 0.5
+        d0 = float(np.linalg.norm(ag.theta - ag.target))
+        info = ag.fit(INST, np.random.default_rng(1), np.random.default_rng(2), 32 * 16 * 150, E.sample_scenarios(INST, 2, np.random.default_rng(3)), 10 ** 9)
+        self.assertLess(float(np.linalg.norm(ag.theta - ag.target)), 0.2 * d0)
+        self.assertEqual(info["generations"], 150)
+
+
 class TestES(unittest.TestCase):
     def test_centered_ranks_are_invariant_to_monotone_transforms_and_centered(self):
         f = np.array([3.0, -1.0, 7.0, 0.5, 2.0])

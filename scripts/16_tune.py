@@ -37,6 +37,7 @@ DEFAULTS = {
     "tab_station": {"alpha": 0.1, "eps_decay_frac": 0.7, "eps_end": 0.05},
     "pg": {"lr_actor": 3e-4, "lr_critic": 1e-3, "entropy": 0.01, "episodes_per_update": 8},
     "es": {"pop": 64, "sigma": 0.2, "lr": 0.05, "bs": 4},                      # P12 (DESVIOS.md 2026-10-22): neuroevolução OpenAI-ES, rede 64–64
+    "sepcma": {"pop": 32, "sigma": 0.1, "bs": 2},                              # P15 (DESVIOS.md 2026-10-23): neuroevolução sep-CMA-ES, mesma rede
 }
 TRAIN_KEYS = {"eps_decay_frac", "eps_end"}
 
@@ -52,6 +53,8 @@ def sample_cfg(method, rng):
     if method == "es":
         return {"pop": int(rng.choice([16, 32, 64, 128])), "sigma": float(10 ** rng.uniform(np.log10(0.05), np.log10(0.5))),
                 "lr": float(10 ** rng.uniform(-2, np.log10(0.2))), "bs": int(rng.choice([1, 2, 4, 8, 16]))}
+    if method == "sepcma":
+        return {"pop": int(rng.choice([12, 16, 24, 32, 48, 64])), "sigma": float(10 ** rng.uniform(np.log10(0.02), np.log10(0.4))), "bs": int(rng.choice([1, 2, 4, 8]))}
     if method == "pg":
         return {"lr_actor": float(10 ** rng.uniform(-4, -2.5)), "lr_critic": float(10 ** rng.uniform(-3.5, -2)),
                 "entropy": float(rng.choice([0.003, 0.01, 0.03, 0.1])), "episodes_per_update": int(rng.choice([4, 8, 16, 32]))}
@@ -92,6 +95,8 @@ def ext_block(method, rng, n):
     elif method == "es":     # P12: o piloto mostrou que σ pequeno não aprende; explora σ, pop e bs maiores (o orçamento fixo em passos limita pop × bs)
         cols = {"pop": _bal(rng, [64, 128, 256], n), "sigma": _bal_log(rng, np.log10(0.1), np.log10(0.8), n),
                 "lr": _bal_log(rng, np.log10(0.03), np.log10(0.3), n), "bs": _bal(rng, [4, 8, 16, 32], n)}
+    elif method == "sepcma":  # P15: pop menor ⇒ mais gerações no mesmo orçamento; explora também bs maior
+        cols = {"pop": _bal(rng, [16, 32, 64, 128], n), "sigma": _bal_log(rng, np.log10(0.03), np.log10(0.3), n), "bs": _bal(rng, [1, 2, 4, 8, 16], n)}
     elif method == "pg":     # vencedor nas 3 escalas: entropia=0,1 (máx.) e episodes_per_update=4 (mín.)
         cols = {"lr_actor": _bal_log(rng, -4, -2.5, n), "lr_critic": _bal_log(rng, -3.5, -2, n),
                 "entropy": _bal(rng, [0.1, 0.3, 1.0], n), "episodes_per_update": _bal(rng, [1, 2, 4], n)}
@@ -156,7 +161,7 @@ def check_reuse(r, cfg, a, sc, inst, method, ci, seed):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--instance", required=True)
-    ap.add_argument("--methods", nargs="+", default=[m for m in DEFAULTS if m != "es"])
+    ap.add_argument("--methods", nargs="+", default=[m for m in DEFAULTS if m not in ("es", "sepcma")])
     ap.add_argument("--configs", type=int, default=8)
     ap.add_argument("--seeds", type=int, nargs="+", default=[1000, 1001])
     ap.add_argument("--budget", type=int, default=100_000)

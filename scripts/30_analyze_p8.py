@@ -553,9 +553,10 @@ def dprl_section(runs):
 
 
 N_SUB = 300          # primeiros cenários de teste usados em TODAS as comparações do artigo do CEC (RHEA/rollout em 20/30 est. só têm 300)
-CEC_METHODS = ("stay", "heur", "cma", "rollout", "rhea_s", "rhea_l", "rhea_s_v", "rhea_l_v", "dqn", "dqn2m", "dprl", "es", "es2m")
+CEC_METHODS = ("stay", "heur", "cma", "rollout", "rhea_s", "rhea_l", "rhea_s_v", "rhea_l_v", "dqn", "dqn2m", "dprl", "es", "es2m", "sepcma", "sepcma2m")
 CEC_LABEL = {"stay": "Stay", "heur": "Reference heuristic", "grid": "Grid-calibrated heuristic", "cma": "CMA-ES heuristic", "rollout": "MC rollout", "rhea_s": "RHEA-S", "rhea_l": "RHEA-L", "rhea_s_v": "RHEA-S + DQN value", "rhea_l_v": "RHEA-L + DQN value",
-             "dqn": "DQN", "dqn2m": "DQN (4x budget)", "dprl": "Dual-policy (DPRL-style)", "es": "ES (neuroevolution)", "es2m": "ES (4x budget)"}
+             "dqn": "DQN", "dqn2m": "DQN (4x budget)", "dprl": "Dual-policy (DPRL-style)", "es": "ES (neuroevolution)", "es2m": "ES (4x budget)",
+             "sepcma": "sep-CMA-ES (neuroevolution)", "sepcma2m": "sep-CMA-ES (4x budget)"}
 
 
 def _sub_means(rows, n):
@@ -675,6 +676,8 @@ def cec_data(runs, scales=SCALES, n=N_SUB):
         seeds("dprl", [r for r in rows_of(runs / f"dprl_{inst}.jsonl") if r["method"] == "dprl"])
         seeds("es", [r for r in rows_of(runs / f"es_{inst}.jsonl") if r["method"] == "es"])
         seeds("es2m", [r for r in rows_of(runs / f"es2m_{inst}.jsonl") if r["method"] == "es"])
+        seeds("sepcma", [r for r in rows_of(runs / f"sepcma_{inst}.jsonl") if r["method"] == "sepcma"])
+        seeds("sepcma2m", [r for r in rows_of(runs / f"sepcma2m_{inst}.jsonl") if r["method"] == "sepcma"])
         out[inst] = res
     return out
 
@@ -685,10 +688,11 @@ def cec_contrasts(runs, scales=SCALES, n=N_SUB):
     out = {}
     for inst, r in d.items():
         rows = {}
-        pairs = (("es", "dqn"), ("dprl", "dqn"), ("es", "dprl"), ("es2m", "dqn2m"))
+        pairs = (("es", "dqn"), ("dprl", "dqn"), ("es", "dprl"), ("es2m", "dqn2m"), ("sepcma", "es"), ("sepcma", "dqn"), ("sepcma2m", "es2m"), ("sepcma2m", "dqn2m"))
         raw = {}
         for name, path, key in (("dqn", "final_primary.jsonl" if inst in ("cb4wd", "cb8wd", "cb12wd") else f"scale_{inst}.jsonl", "dqn"),
-                                ("dprl", f"dprl_{inst}.jsonl", "dprl"), ("es", f"es_{inst}.jsonl", "es"), ("es2m", f"es2m_{inst}.jsonl", "es")):
+                                ("dprl", f"dprl_{inst}.jsonl", "dprl"), ("es", f"es_{inst}.jsonl", "es"), ("es2m", f"es2m_{inst}.jsonl", "es"),
+                                ("sepcma", f"sepcma_{inst}.jsonl", "sepcma"), ("sepcma2m", f"sepcma2m_{inst}.jsonl", "sepcma")):
             rr = [x for x in rows_of(Path(runs) / path) if x["method"] == key and (key != "dqn" or x.get("instance", inst) == inst)]
             raw[name] = np.array([float(np.mean(x["test_rewards"][:n])) for x in rr if "test_rewards" in x])
         if inst in ("cb4wd", "cb8wd", "cb12wd"):
@@ -711,7 +715,7 @@ def cec_contrasts(runs, scales=SCALES, n=N_SUB):
                 dd = hv - dq
                 lo, hi = ci_t(dd)
                 rows[f"{name}_vs_dqnsame"] = {"delta": float(dd.mean()), "lo": float(lo), "hi": float(hi), "na": len(dd), "dqn": -float(dq.mean())}
-        for a in ("dqn", "dprl", "es", "dqn2m", "es2m", "rhea_s_v", "rhea_l_v"):
+        for a in ("dqn", "dprl", "es", "dqn2m", "es2m", "rhea_s_v", "rhea_l_v", "sepcma", "sepcma2m"):
             for ref in ("rollout", "rhea_s", "rhea_l", "heur"):
                 if ref in r and len(raw.get(a, [])) >= 2:
                     rr = -r[ref]["mean"]

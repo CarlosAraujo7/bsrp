@@ -486,6 +486,19 @@ class TestCecData(unittest.TestCase):
         self.assertEqual(c["cma_vs_random"]["verdict"], "better")
         self.assertEqual((c["cma_vs_random"]["n_cma"], c["cma_vs_random"]["n_random"]), (4, 4))
 
+    def test_sepcma_rows_and_contrasts_against_es_and_dqn(self):
+        t = self.tmp
+        rng = np.random.default_rng(4)
+        dump(t / "sepcma_cb30wd.jsonl", [{"method": "sepcma", "seed": s, "test_mean": -380.0, "test_rewards": [-380.0 + float(rng.normal(0, 1))] * 1000, "real_test_mean": -385.0} for s in range(4)])
+        d = P8.cec_data(t, scales=("cb30wd",), n=300)["cb30wd"]
+        self.assertEqual(d["sepcma"]["n"], 4)
+        self.assertNotIn("sepcma2m", d)
+        c = P8.cec_contrasts(t, scales=("cb30wd",), n=300)["cb30wd"]
+        self.assertAlmostEqual(c["sepcma_vs_es"]["delta"], 20.0, delta=2.0)                  # sep-CMA −380 contra ES −400: +20 (positivo favorece o sep-CMA-ES)
+        self.assertGreater(c["sepcma_vs_es"]["lo"], 0)
+        self.assertLess(c["sepcma_vs_dqn"]["hi"], 0)                                          # DQN (−340) ainda melhor
+        self.assertIn("sepcma_vs_rollout", c)
+
     def test_rhea_vs_rollout_paired_bootstrap(self):
         r = P8.cec_rhea_vs_rollout(self.tmp, scales=("cb30wd",), n=300)["cb30wd"]
         self.assertAlmostEqual(r["rollout"], 300.0)
