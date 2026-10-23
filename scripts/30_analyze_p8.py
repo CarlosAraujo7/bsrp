@@ -769,9 +769,17 @@ ES_BUDGETS = (("500k", "es_{}.jsonl"), ("2M", "es2m_{}.jsonl"), ("8M", "es8m_{}.
 ES_STEPS = {"500k": 5e5, "2M": 2e6, "8M": 8e6, "32M": 3.2e7}
 
 
-def cec_es_budget(runs, scales=SCALES):
+SEP_BUDGETS = (("500k", "sepcma_{}.jsonl"), ("2M", "sepcma2m_{}.jsonl"), ("8M", "sepcma8m_{}.jsonl"), ("32M", "sepcma32m_{}.jsonl"))
+
+
+def cec_sep_budget(runs, scales=SCALES):
+    """P15: o mesmo que `cec_es_budget` para o sep-CMA-ES (arquivos sepcma*_<inst>.jsonl)."""
+    return cec_es_budget(runs, scales, budgets=SEP_BUDGETS, method="sepcma")
+
+
+def cec_es_budget(runs, scales=SCALES, budgets=ES_BUDGETS, method="es"):
     """P12d: neuroevolução (ES) × orçamento de passos, no teste inteiro (1000 cenários), unidade = semente. Contraste ES(B) − DQN(500 mil) por Welch (reward; positivo
-    favorece o ES). 'reached' = menor orçamento cujo IC95% do contraste inclui ou passa de 0 (None se nenhum)."""
+    favorece o ES). 'reached' = menor orçamento cujo IC95% do contraste inclui ou passa de 0 (None se nenhum). `budgets`/`method`: outro algoritmo de neuroevolução (P15)."""
     out = {}
     for inst in scales:
         stay, grid, ref, src = cec_reference(runs, inst)
@@ -781,8 +789,8 @@ def cec_es_budget(runs, scales=SCALES):
         dqx = np.array([r["test_mean"] for r in dq], float)
         rec = {"n_st": N_ST[inst], "heur": -float(ref["test_mean"]), "dqn": -float(dqx.mean()) if len(dqx) else float("nan"), "budgets": {}, "reached": None,
                "dqn_secs": float(np.mean([r.get("train_seconds", float("nan")) for r in dq])) if dq else float("nan")}
-        for tag, pat in ES_BUDGETS:
-            er = [r for r in rows_of(Path(runs) / pat.format(inst)) if r["method"] == "es"]
+        for tag, pat in budgets:
+            er = [r for r in rows_of(Path(runs) / pat.format(inst)) if r["method"] == method]
             xs = np.array([r["test_mean"] for r in er], float)
             if len(xs) < 2:
                 continue

@@ -942,6 +942,16 @@ def cec_evo_outputs(runs, tdir, root):
         for ext in ("pdf", "png"):
             fig.savefig(figdir / f"fig_cec_curves.{ext}", bbox_inches="tight")
         plt.close(fig)
+    sbud = AN30.cec_sep_budget(runs)
+    for inst, b in sbud.items():
+        L = SCALE_LETTER[inst]
+        for tg, x in b["budgets"].items():
+            k = BUD_KEY[tg]
+            mac[f"cecSBud{k}{L}"], mac[f"cecSBud{k}Hw{L}"], mac[f"cecSBud{k}N{L}"] = pt(x["mean"], 1), pt((x["hi"] - x["lo"]) / 2, 1), str(x["n"])
+            mac[f"cecSBud{k}H{L}"], mac[f"cecSBud{k}HLo{L}"], mac[f"cecSBud{k}HHi{L}"] = pt(x["vs_heur"], 1), pt(x["vs_heur_lo"], 1), pt(x["vs_heur_hi"], 1)
+            if "vs_dqn" in x:
+                mac[f"cecSBud{k}Vs{L}"], mac[f"cecSBud{k}VsLo{L}"], mac[f"cecSBud{k}VsHi{L}"] = pt(x["vs_dqn"], 1), pt(x["vs_dqn_lo"], 1), pt(x["vs_dqn_hi"], 1)
+            mac[f"cecSTime{k}{L}"] = pt(x["secs"] / 60, 0)
     sel = [i for i in ("cb4wd", "cb12wd", "cb30wd") if i in bud and len(bud[i]["budgets"]) >= 2]
     if sel:
         fig, axes = plt.subplots(1, len(sel), figsize=(7.2, 2.3), sharey=False)
@@ -951,7 +961,11 @@ def cec_evo_outputs(runs, tdir, root):
             xs = [b["budgets"][tg]["steps"] for tg in b["budgets"]]
             ys = [b["budgets"][tg]["mean"] for tg in b["budgets"]]
             es_ = [(b["budgets"][tg]["hi"] - b["budgets"][tg]["lo"]) / 2 for tg in b["budgets"]]
-            ax.errorbar(xs, ys, yerr=es_, color=CEC_COL["es"], marker="o", ms=3.2, lw=1.1, capsize=1.5, label="ES")
+            ax.errorbar(xs, ys, yerr=es_, color=CEC_COL["es"], marker="o", ms=3.2, lw=1.1, capsize=1.5, label="OpenAI-ES")
+            sb = sbud.get(inst, {}).get("budgets", {})
+            if len(sb) >= 2:                                                                  # sep-CMA-ES (P15), levemente deslocado no eixo x para não sobrepor as barras
+                ax.errorbar([sb[tg]["steps"] * 1.12 for tg in sb], [sb[tg]["mean"] for tg in sb], yerr=[(sb[tg]["hi"] - sb[tg]["lo"]) / 2 for tg in sb],
+                            color=CEC_COL["sepcma"], marker="s", ms=3.0, lw=1.1, capsize=1.5, label="sep-CMA-ES")
             ax.axhline(b["dqn"], color=CEC_COL["dqn"], lw=1.0, ls="--", label="DQN (500k)")
             ax.axhline(b["heur"], color=CEC_COL["heur"], lw=1.0, ls=":", label="reference heuristic")
             ax.set_xscale("log")

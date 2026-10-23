@@ -423,6 +423,20 @@ class TestCecData(unittest.TestCase):
         self.assertEqual(list(c["es"]), ["500k"])                                                        # só o orçamento com arquivo
         self.assertAlmostEqual(c["es"]["500k"]["steps"][1], 102000.0)
 
+    def test_sep_budget_uses_its_own_files_and_leaves_the_es_curve_alone(self):
+        t = self.tmp
+        dump(t / "scale_cb30wd.jsonl", [{"method": "dqn", "seed": s, "test_mean": -340.0 + (s - 1.5), "train_seconds": 1000.0} for s in range(4)])
+        dump(t / "es_cb30wd.jsonl", [{"method": "es", "seed": s, "test_mean": -400.0 + (s - 1.5), "train_seconds": 40.0} for s in range(4)])
+        dump(t / "sepcma_cb30wd.jsonl", [{"method": "sepcma", "seed": s, "test_mean": -390.0 + (s - 1.5), "train_seconds": 50.0} for s in range(4)])
+        dump(t / "sepcma32m_cb30wd.jsonl", [{"method": "sepcma", "seed": s, "test_mean": -360.0 + s, "train_seconds": 2400.0} for s in range(3)])
+        sb = P8.cec_sep_budget(t, scales=("cb30wd",))["cb30wd"]
+        self.assertEqual(sorted(sb["budgets"]), ["32M", "500k"])
+        self.assertAlmostEqual(sb["budgets"]["500k"]["mean"], 390.0)
+        self.assertLess(sb["budgets"]["500k"]["vs_dqn_hi"], 0)
+        self.assertAlmostEqual(sb["budgets"]["32M"]["secs"], 2400.0)
+        eb = P8.cec_es_budget(t, scales=("cb30wd",))["cb30wd"]
+        self.assertEqual(sorted(eb["budgets"]), ["500k"])                                      # o ES não enxerga os arquivos do sep-CMA-ES
+
     def test_es_budget_training_time_and_config(self):
         t = self.tmp
         dump(t / "scale_cb30wd.jsonl", [{"method": "dqn", "seed": s, "test_mean": -340.0 + (s - 1.5), "train_seconds": 1000.0} for s in range(4)])
