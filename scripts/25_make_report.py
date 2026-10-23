@@ -814,7 +814,8 @@ def cec_controls_table(runs, tdir):
     """P14: tabela 'a evolução importa?' (RHEA × tiro aleatório e CMA-ES × busca aleatória, mesmo orçamento) e macros."""
     ctl = AN30.cec_controls(runs)
     mac = {}
-    c1 = lambda x: "--" if x is None else f"{pt(x['delta'], 1)} [{pt(x['lo'], 1)}; {pt(x['hi'], 1)}]"
+    # a tabela e as macros mostram a DIFERENÇA EM DEMANDA PERDIDA (RHEA − controle e CMA-ES − aleatória; negativo = a evolução é melhor), o oposto do sinal em reward da análise
+    c1 = lambda x: "--" if x is None else f"{pt(-x['delta'], 1)} [{pt(-x['hi'], 1)}; {pt(-x['lo'], 1)}]"
     with open(tdir / "cec_controls.tex", "w", encoding="utf-8") as f:
         f.write("\\begin{tabular}{lrrrl}\n\\toprule\nStations & RHEA-S$-$RS [95\\% CI] & RHEA-L$-$RL [95\\% CI] & CMA-ES$-$random [95\\% CI] & Reading \\\\\n\\midrule\n")
         for inst, rec in ctl.items():
@@ -823,14 +824,17 @@ def cec_controls_table(runs, tdir):
             for key, nm in (("rhea_vs_rs_s", "S"), ("rhea_vs_rs_l", "L")):
                 x = rec.get(key)
                 if x is not None:
-                    mac[f"cecCtl{nm}Delta{L}"], mac[f"cecCtl{nm}Lo{L}"], mac[f"cecCtl{nm}Hi{L}"] = pt(x["delta"], 1), pt(x["lo"], 1), pt(x["hi"], 1)
+                    mac[f"cecCtl{nm}Delta{L}"], mac[f"cecCtl{nm}Lo{L}"], mac[f"cecCtl{nm}Hi{L}"] = pt(-x["delta"], 1), pt(-x["hi"], 1), pt(-x["lo"], 1)
                     mac[f"cecCtl{nm}Rhea{L}"], mac[f"cecCtl{nm}Ctl{L}"] = pt(x["rhea"], 1), pt(x["control"], 1)
             if cv is not None:
-                mac[f"cecCtlCmaDelta{L}"], mac[f"cecCtlCmaLo{L}"], mac[f"cecCtlCmaHi{L}"] = pt(cv["delta"], 2), pt(cv["lo"], 2), pt(cv["hi"], 2)
+                mac[f"cecCtlCmaDelta{L}"], mac[f"cecCtlCmaLo{L}"], mac[f"cecCtlCmaHi{L}"] = pt(-cv["delta"], 2), pt(-cv["hi"], 2), pt(-cv["lo"], 2)
                 mac[f"cecCtlCma{L}"], mac[f"cecCtlRand{L}"] = pt(cv["cma"], 2), pt(cv["random"], 2)
-            cm = "--" if cv is None else f"{pt(cv['delta'], 2)} [{pt(cv['lo'], 2)}; {pt(cv['hi'], 2)}]"
+            cm = "--" if cv is None else f"{pt(-cv['delta'], 2)} [{pt(-cv['hi'], 2)}; {pt(-cv['lo'], 2)}]"
             f.write(tex_num(f"{rec['n_st']} & {c1(rec.get('rhea_vs_rs_s'))} & {c1(rec.get('rhea_vs_rs_l'))} & {cm} & {'--' if cv is None else cv['verdict']} \\\\\n"))
         f.write("\\bottomrule\n\\end{tabular}\n")
+    cmas = [rec["cma_vs_random"]["delta"] for rec in ctl.values() if "cma_vs_random" in rec]
+    if cmas:
+        mac["cecCtlCmaMax"] = pt(max(abs(v) for v in cmas), 2)
     return mac
 
 
@@ -1051,6 +1055,20 @@ def check_claims_cec(runs):
         c = C[i].get("dqn2m_vs_rhea_l")
         got = None if c is None else ("dqn2m" if c["lo"] > 0 else ("rhea" if c["hi"] < 0 else "empate"))
         out.append((got == wl[i], f"CEC {i}: DQN 4× × RHEA-L = {got} (texto: {wl[i]})"))
+    # P14: controles sem evolução (RHEA × tiro aleatório; CMA-ES × busca aleatória)
+    ctl = AN30.cec_controls(runs)
+    want_s = {"cb4wd": "tie", "cb8wd": "tie", "cb12wd": "evo", "cb20wd": "evo", "cb30wd": "evo"}
+    want_l = {"cb12wd": "evo", "cb30wd": "evo"}
+    for key, want in (("rhea_vs_rs_s", want_s), ("rhea_vs_rs_l", want_l)):
+        for i, w in want.items():
+            x = ctl.get(i, {}).get(key)
+            got = None if x is None else ("evo" if x["lo"] > 0 else ("random" if x["hi"] < 0 else "tie"))
+            out.append((got == w, f"CEC {i}: {key} = {got} (texto: {w})"))
+    wc = {"cb4wd": "equivalent", "cb8wd": "equivalent", "cb12wd": "equivalent", "cb20wd": "inconclusive", "cb30wd": "inconclusive"}
+    for i, w in wc.items():
+        v = ctl.get(i, {}).get("cma_vs_random")
+        out.append((v is not None and v["verdict"] == w, f"CEC {i}: CMA-ES × busca aleatória = {None if v is None else v['verdict']} (texto: {w})"))
+    out.append((all(abs(r["cma_vs_random"]["delta"]) <= 0.25 for r in ctl.values() if "cma_vs_random" in r) and len(ctl) == 5, "CEC: |CMA-ES − busca aleatória| ≤ 0,25 de demanda perdida/dia nas 5 escalas"))
     # P13: RHEA com valor terminal do DQN (leituras pré-fixadas: IC95% t > 0 → híbrido melhor; < 0 → pior; senão sem diferença detectada)
     def verdict(c, pos="hybrid", neg="other"):
         return None if c is None else (pos if c["lo"] > 0 else (neg if c["hi"] < 0 else "tie"))

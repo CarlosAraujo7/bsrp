@@ -14,12 +14,12 @@ Escrita por quem desenvolveu o trabalho (viés a favor do projeto): o número é
 | Clareza e formato | 10% | 68 | formato IEEE correto (A4, 2 colunas, anônimo, fontes embutidas); texto escrito por IA, sem revisão humana; falta divulgação de IA |
 | Reprodutibilidade | 5% | 80 | tudo gerado dos logs; sem link por causa do duplo-anônimo |
 
-**Nota global estimada: ≈ 66–68/100** (antes do P12 era ≈ 50). Faixa de decisão do CEC: abaixo de ~60 tende a rejeição, 60–72 é incerto (depende dos revisores),
+**Nota global estimada: ≈ 66–68/100 após o P13; ≈ 68–70/100 após o P14** (antes do P12 era ≈ 50). Faixa de decisão do CEC: abaixo de ~60 tende a rejeição, 60–72 é incerto (depende dos revisores),
 acima de ~75 é aceitação provável. **Meta de "trabalho satisfatório": ≥ 75.**
 
 ## Fraquezas, em ordem de ganho esperado por custo
 
-1. **Faltam controles de computação evolutiva** (ganho ~+3, custo baixo). Um revisor de EC perguntará: o RHEA evolui de verdade ou uma busca aleatória com o mesmo número de avaliações faz o mesmo? O CMA-ES
+1. **~~Faltam controles de computação evolutiva~~ (feito no P14, 23/out: a evolução ajuda o RHEA a partir de 12 est. e não ajuda a calibração de 3–5 parâmetros; falta só o segundo algoritmo de neuroevolução)** (ganho ~+3, custo baixo). Um revisor de EC perguntará: o RHEA evolui de verdade ou uma busca aleatória com o mesmo número de avaliações faz o mesmo? O CMA-ES
    supera a busca aleatória com 200 avaliações? O ES é fraco por ser o OpenAI-ES, ou toda neuroevolução de pesos falha aqui? → P14: busca aleatória (mesmo orçamento) para o RHEA e para a calibração; um segundo
    algoritmo de neuroevolução (ES separável com covariância diagonal).
 2. **Validade externa: uma cidade** (ganho ~+4–5, custo médio, **exige permissão para baixar dados novos**). Uma segunda cidade com dados abertos (ex.: Capital Bikeshare, Washington) pelo mesmo pipeline.
