@@ -538,7 +538,7 @@ def dprl_data(runs, scales=SCALES):
 def dprl_section(runs):
     d = dprl_data(runs)
     L = ["## (f) Adaptação do DPRL: duas políticas (inventário + roteamento) (P11)\n",
-         "> Adaptação (não reprodução) de Liang et al. (2024): `bsrp/dprl.py`; config do DQN plano da escala, **sem ajuste próprio**, 500 mil passos, 5 sementes. 'Δ vs plano' = Welch "
+         "> Adaptação (não reprodução) de Liang et al. (2024): `bsrp/dprl.py`; config do DQN plano da escala, **sem ajuste próprio**, 500 mil passos, 5 sementes (P11) e 10 (P16). 'Δ vs plano' = Welch "
          "(dual − DQN plano do mesmo orçamento, em reward; positivo favorece o dual). 'dual − rollout' em reward (negativo = o rollout continua melhor; em 20/30 est. nos primeiros cenários de teste). "
          "Leitura pré-fixada em `DESVIOS.md` (2026-10-20).\n",
          "| escala | DQN plano [n] | dual [IC95%] (n) | Δ vs plano [IC95% Welch] | redução vs heurística (plano → dual) | dual − rollout [IC95%] | leitura |", "|---|---|---|---|---|---|---|"]

@@ -31,7 +31,7 @@ verdadeiro da demanda supera o DQN com 8 e 12 esta\c{c}\~oes no teste sint\'etic
 com o qu\'adruplo do or\c{c}amento de treino, o DQN empata com o \emph{rollout} com 8 esta\c{c}\~oes e continua atr\'as com 12 e, sem reajuste, com 20 e 30.
 Representa\c{c}\~oes tabulares e lineares n\~ao superam a heur\'istica; um A2C adaptado de um trabalho publicado, com os hiperpar\^ametros originais, n\~ao \'e competitivo e, mesmo ajustado com o mesmo or\c{c}amento dos demais, s\'o supera a heur\'istica com 4 esta\c{c}\~oes e fica atr\'as do DQN em todas as escalas.
 Na abla\c{c}\~ao, apenas o \emph{replay} \'e comprovadamente necess\'ario. A vantagem do DQN n\~ao se mant\'em com demanda baixa em 12 esta\c{c}\~oes. Um planejador clarividente mostra que o limite de demanda perdida \'e frouxo: quase toda ela \'e evit\'avel com conhecimento do futuro.
-Uma adapta\c{c}\~ao do DPRL (duas pol\'iticas, de invent\'ario e de roteamento) melhora o DQN plano com 8, 12 e 20 esta\c{c}\~oes e empata com o \emph{rollout} com 12, e redes mais largas n\~ao ajudam. A vantagem relativa do DQN sobre a heur\'istica diminui com o tamanho do sistema (de \scRedFiveA\% com 4 esta\c{c}\~oes a \scRedFiveE\% com 30, sem reajuste de hiperpar\^ametros).
+Uma adapta\c{c}\~ao do DPRL (duas pol\'iticas, de invent\'ario e de roteamento) melhora o DQN plano com 8, 12, 20 e 30 esta\c{c}\~oes e supera o \emph{rollout} com 8 e 12, e redes mais largas n\~ao ajudam. A vantagem relativa do DQN sobre a heur\'istica diminui com o tamanho do sistema (de \scRedFiveA\% com 4 esta\c{c}\~oes a \scRedFiveE\% com 30, sem reajuste de hiperpar\^ametros).
 Discutimos os limites do simulador (sem roteamento) e o que o protocolo corrigiu em resultados anteriores.
 \end{abstract}
 
@@ -187,11 +187,11 @@ segunda melhor), de modo que a configura\c{c}\~ao herdada n\~ao explica a queda 
 \end{figure}
 
 \subsection{Pol\'itica dupla (DPRL adaptado) e capacidade da rede}
-\textbf{Pol\'itica dupla.} Com o mesmo or\c{c}amento de 500 mil passos de ambiente (e cerca de $1{,}8\times$ o custo de c\'alculo), a pol\'itica dupla melhora o DQN plano com 8, 12 e 20
-esta\c{c}\~oes (\dprlDeltaB\ [\dprlDeltaLoB; \dprlDeltaHiB], \dprlDeltaC\ [\dprlDeltaLoC; \dprlDeltaHiC] e \dprlDeltaD\ [\dprlDeltaLoD; \dprlDeltaHiD] em \emph{reward}; Welch) e empata com 4 e 30
-(\dprlDeltaA\ [\dprlDeltaLoA; \dprlDeltaHiA] e \dprlDeltaE\ [\dprlDeltaLoE; \dprlDeltaHiE]). A redu\c{c}\~ao sobre a heur\'istica passa de \dprlFlatRedB\% para \dprlRedB\% com 8 esta\c{c}\~oes, de \dprlFlatRedC\% para
-\dprlRedC\% com 12, de \dprlFlatRedD\% para \dprlRedD\% com 20 e de \dprlFlatRedE\% para \dprlRedE\% com 30. Contra o \emph{rollout}, a pol\'itica dupla o supera com 8 esta\c{c}\~oes
-(\dprlVsRollB\ [\dprlVsRollLoB; \dprlVsRollHiB], em \emph{reward}; positivo favorece a pol\'itica dupla), empata com 12 (\dprlVsRollC\ [\dprlVsRollLoC; \dprlVsRollHiC]) e fica atr\'as com 20 e 30
+\textbf{Pol\'itica dupla.} Com o mesmo or\c{c}amento de 500 mil passos de ambiente (e cerca de $1{,}8\times$ o custo de c\'alculo), a pol\'itica dupla melhora o DQN plano com 8, 12, 20 e 30
+esta\c{c}\~oes (\dprlDeltaB\ [\dprlDeltaLoB; \dprlDeltaHiB], \dprlDeltaC\ [\dprlDeltaLoC; \dprlDeltaHiC], \dprlDeltaD\ [\dprlDeltaLoD; \dprlDeltaHiD] e \dprlDeltaE\ [\dprlDeltaLoE; \dprlDeltaHiE] em \emph{reward}; Welch; 10 sementes) e empata com 4
+(\dprlDeltaA\ [\dprlDeltaLoA; \dprlDeltaHiA]). A redu\c{c}\~ao sobre a heur\'istica passa de \dprlFlatRedB\% para \dprlRedB\% com 8 esta\c{c}\~oes, de \dprlFlatRedC\% para
+\dprlRedC\% com 12, de \dprlFlatRedD\% para \dprlRedD\% com 20 e de \dprlFlatRedE\% para \dprlRedE\% com 30. Contra o \emph{rollout}, a pol\'itica dupla o supera com 8 e 12 esta\c{c}\~oes
+(\dprlVsRollB\ [\dprlVsRollLoB; \dprlVsRollHiB] e \dprlVsRollC\ [\dprlVsRollLoC; \dprlVsRollHiC], em \emph{reward}; positivo favorece a pol\'itica dupla) e fica atr\'as com 20 e 30
 (\dprlVsRollD\ [\dprlVsRollLoD; \dprlVsRollHiD] e \dprlVsRollE\ [\dprlVsRollLoE; \dprlVsRollHiE]): fatorar o espa\c{c}o de a\c{c}\~oes reduz, mas n\~ao elimina, a queda com a escala
 (Figura~\ref{fig:escala}). Ressalvas: uma \'unica configura\c{c}\~ao, escolhida para o DQN plano, e n\~ao se separa o efeito da fatora\c{c}\~ao do de haver duas atualiza\c{c}\~oes por passo.
 

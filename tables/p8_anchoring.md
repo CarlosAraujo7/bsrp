@@ -68,8 +68,8 @@
 | 4 est. | 46,94 | 24,46 | 9,77 [9,37; 10,18] (n = 10) | 14,69 [14,28; 15,10] | 60% | 9,28 [9,07; 9,49] (n = 5) | 15,18 [14,97; 15,39] | 62% | 11,83 (52%) |
 | 8 est. | 89,77 | 52,79 | 29,69 [29,03; 30,34] (n = 10) | 23,10 [22,45; 23,76] | 44% | 27,54 [26,28; 28,79] (n = 5) | 25,25 [24,00; 26,51] | 48% | 27,08 (49%) |
 | 12 est. | 131,34 | 80,45 | 55,94 [54,74; 57,14] (n = 10) | 24,51 [23,31; 25,71] | 30% | 52,04 [50,01; 54,08] (n = 5) | 28,41 [26,37; 30,45] | 35% | 48,10 (40%) |
-| 20 est. | 359,83 | 277,27 | 219,09 [214,95; 223,23] (n = 5) | 58,18 [54,04; 62,32] | 21% | 206,14 [203,81; 208,47] (n = 5) | 71,13 [68,80; 73,46] | 26% | 202,88 (28%; 300 cen.) |
-| 30 est. | 466,81 | 378,52 | 338,45 [334,87; 342,03] (n = 5) | 40,07 [36,49; 43,65] | 11% | 317,32 [311,38; 323,26] (n = 5) | 61,21 [55,27; 67,15] | 16% | 295,74 (23%; 300 cen.) |
+| 20 est. | 359,83 | 277,27 | 219,69 [217,09; 222,29] (n = 10) | 57,58 [54,98; 60,18] | 21% | 206,14 [203,81; 208,47] (n = 5) | 71,13 [68,80; 73,46] | 26% | 202,88 (28%; 300 cen.) |
+| 30 est. | 466,81 | 378,52 | 343,63 [337,76; 349,49] (n = 10) | 34,89 [29,03; 40,76] | 9% | 317,32 [311,38; 323,26] (n = 5) | 61,21 [55,27; 67,15] | 16% | 295,74 (23%; 300 cen.) |
 ### (d2) DQN reajustado em 30 estações (P9b)
 
 A reavaliação do pool de 16 configs escolheu a mesma config do P1 de 12 estações (nº 9; val -372,37 contra -376,41 da segunda melhor): seleção confirmada; o resultado é o de 500 mil passos acima. Leitura pré-fixada: a configuração herdada de 12 estações não explica a queda da vantagem (dentro deste espaço de busca).
@@ -81,22 +81,22 @@ A reavaliação do pool de 16 configs escolheu a mesma config do P1 de 12 estaç
 
 | escala | rede | n | demanda perdida [IC95%] | Δ vs 64–64 [IC95% Welch] | redução vs heurística | DQN − rollout [IC95%] | leitura |
 |---|---|---|---|---|---|---|---|
-| 30 est. | 64–64 (n = 5) | 5 | 338,45 | — | 11% | — | referência |
-| 30 est. | 128–128 | 5 | 357,45 [346,68; 368,23] | -19,00 [-29,59; -8,40] | 6% | -68,72 [-79,09; -58,35] | a rede maior piora (demais hiperparâmetros não reajustados) |
-| 30 est. | 256–256 | 5 | 391,36 [381,70; 401,01] | -52,90 [-62,39; -43,41] | -3% | -102,28 [-112,74; -91,81] | a rede maior piora (demais hiperparâmetros não reajustados) |
+| 30 est. | 64–64 (n = 10) | 10 | 343,63 | — | 9% | — | referência |
+| 30 est. | 128–128 | 5 | 357,45 [346,68; 368,23] | -13,82 [-24,66; -2,98] | 6% | -68,72 [-79,09; -58,35] | a rede maior piora (demais hiperparâmetros não reajustados) |
+| 30 est. | 256–256 | 5 | 391,36 [381,70; 401,01] | -47,73 [-57,62; -37,83] | -3% | -102,28 [-112,74; -91,81] | a rede maior piora (demais hiperparâmetros não reajustados) |
 | 12 est. | 64–64 (n = 10) | 10 | 55,94 | — | 30% | — | referência |
 | 12 est. | 128–128 | 5 | 62,73 [60,06; 65,39] | -6,79 [-9,42; -4,16] | 22% | -14,63 [-17,30; -11,97] | a rede maior piora (demais hiperparâmetros não reajustados) |
 | 12 est. | 256–256 | 5 | 73,15 [71,80; 74,50] | -17,21 [-18,78; -15,64] | 9% | -25,05 [-26,41; -23,70] | a rede maior piora (demais hiperparâmetros não reajustados) |
 
 ## (f) Adaptação do DPRL: duas políticas (inventário + roteamento) (P11)
 
-> Adaptação (não reprodução) de Liang et al. (2024): `bsrp/dprl.py`; config do DQN plano da escala, **sem ajuste próprio**, 500 mil passos, 5 sementes. 'Δ vs plano' = Welch (dual − DQN plano do mesmo orçamento, em reward; positivo favorece o dual). 'dual − rollout' em reward (negativo = o rollout continua melhor; em 20/30 est. nos primeiros cenários de teste). Leitura pré-fixada em `DESVIOS.md` (2026-10-20).
+> Adaptação (não reprodução) de Liang et al. (2024): `bsrp/dprl.py`; config do DQN plano da escala, **sem ajuste próprio**, 500 mil passos, 5 sementes (P11) e 10 (P16). 'Δ vs plano' = Welch (dual − DQN plano do mesmo orçamento, em reward; positivo favorece o dual). 'dual − rollout' em reward (negativo = o rollout continua melhor; em 20/30 est. nos primeiros cenários de teste). Leitura pré-fixada em `DESVIOS.md` (2026-10-20).
 
 | escala | DQN plano [n] | dual [IC95%] (n) | Δ vs plano [IC95% Welch] | redução vs heurística (plano → dual) | dual − rollout [IC95%] | leitura |
 |---|---|---|---|---|---|---|
-| 4 est. | 9,77 [10] | 10,19 [8,96; 11,41] (5) | -0,41 [-1,61; 0,78] | 60% → 58% | 1,65 [0,42; 2,87] | empate |
-| 8 est. | 29,69 [10] | 24,65 [23,97; 25,32] (5) | 5,04 [4,22; 5,86] | 44% → 53% | 2,43 [1,75; 3,11] | a fatoração em duas políticas melhora o DQN |
-| 12 est. | 55,94 [10] | 47,20 [45,78; 48,63] (5) | 8,74 [7,12; 10,36] | 30% → 41% | 0,89 [-0,53; 2,32] | a fatoração em duas políticas melhora o DQN |
-| 20 est. | 219,09 [5] | 211,48 [207,35; 215,61] (5) | 7,61 [2,75; 12,46] | 21% → 24% | -13,24 [-17,95; -8,53] | a fatoração em duas políticas melhora o DQN |
-| 30 est. | 338,45 [5] | 332,86 [323,99; 341,73] (5) | 5,60 [-3,13; 14,32] | 11% → 12% | -44,05 [-53,07; -35,03] | empate |
+| 4 est. | 9,77 [10] | 9,57 [8,89; 10,25] (10) | 0,20 [-0,55; 0,95] | 60% → 61% | 2,26 [1,58; 2,94] | empate |
+| 8 est. | 29,69 [10] | 24,79 [24,38; 25,20] (10) | 4,90 [4,17; 5,63] | 44% → 53% | 2,29 [1,88; 2,70] | a fatoração em duas políticas melhora o DQN |
+| 12 est. | 55,94 [10] | 47,15 [46,51; 47,80] (10) | 8,79 [7,49; 10,09] | 30% → 41% | 0,94 [0,30; 1,59] | a fatoração em duas políticas melhora o DQN |
+| 20 est. | 219,69 [10] | 211,17 [207,00; 215,33] (10) | 8,52 [3,90; 13,15] | 21% → 24% | -12,98 [-17,48; -8,48] | a fatoração em duas políticas melhora o DQN |
+| 30 est. | 343,63 [10] | 332,89 [328,57; 337,21] (10) | 10,74 [3,93; 17,55] | 9% → 12% | -43,83 [-48,21; -39,45] | a fatoração em duas políticas melhora o DQN |
 

@@ -743,10 +743,10 @@ def check_claims(R, A, S):
         out.append((all(ar["cb12wd"][nm]["delta_hi"] < 0 for _, _, nm in AN30.ARCH_TAGS), "P10: com 12 estações as redes 128–128 e 256–256 pioram o DQN (IC de Welch exclui 0)"))
     dp = P8.get("dprl", {})
     if len(dp) == 5:
-        out.append((all(dp[k]["delta_lo"] > 0 for k in ("cb8wd", "cb12wd", "cb20wd")), "P11: o DPRL adaptado melhora o DQN plano em 8, 12 e 20 estações (IC de Welch exclui 0)"))
-        out.append((all(dp[k]["delta_lo"] <= 0 <= dp[k]["delta_hi"] for k in ("cb4wd", "cb30wd")), "P11: o DPRL adaptado empata com o DQN plano em 4 e 30 estações"))
-        out.append((dp["cb8wd"]["vs_roll_lo"] > 0 and dp["cb12wd"]["vs_roll_lo"] <= 0 <= dp["cb12wd"]["vs_roll_hi"] and dp["cb20wd"]["vs_roll_hi"] < 0 and dp["cb30wd"]["vs_roll_hi"] < 0,
-                    "P11: o DPRL adaptado supera o rollout em 8 estações, empata em 12 e fica atrás em 20 e 30"))
+        out.append((all(dp[k]["delta_lo"] > 0 for k in ("cb8wd", "cb12wd", "cb20wd", "cb30wd")), "P11/P16 (10 sementes): o DPRL adaptado melhora o DQN plano em 8, 12, 20 e 30 estações (IC de Welch exclui 0)"))
+        out.append((dp["cb4wd"]["delta_lo"] <= 0 <= dp["cb4wd"]["delta_hi"], "P11/P16: o DPRL adaptado empata com o DQN plano em 4 estações"))
+        out.append((dp["cb8wd"]["vs_roll_lo"] > 0 and dp["cb12wd"]["vs_roll_lo"] > 0 and dp["cb20wd"]["vs_roll_hi"] < 0 and dp["cb30wd"]["vs_roll_hi"] < 0,
+                    "P11/P16: o DPRL adaptado supera o rollout em 8 e 12 estações e fica atrás em 20 e 30"))
     p3c = {it["name"]: it for it in P8["p3c"] if "pending" not in it}
     if {"cb12wdx0.5", "cb12we"} <= set(p3c):
         k, w = p3c["cb12wdx0.5"], p3c["cb12we"]
@@ -1009,12 +1009,12 @@ def check_claims_cec(runs):
     if "cb8wd" in C and "dqn2m_vs_rollout" in C["cb8wd"]:
         c = C["cb8wd"]["dqn2m_vs_rollout"]
         out.append((c["lo"] <= 0 <= c["hi"], "CEC cb8wd: DQN com 4× o orçamento empata com o rollout"))
-    wd = {"cb4wd": "empate", "cb8wd": "dprl", "cb12wd": "dprl", "cb20wd": "dprl", "cb30wd": "empate"}
+    wd = {"cb4wd": "empate", "cb8wd": "dprl", "cb12wd": "dprl", "cb20wd": "dprl", "cb30wd": "dprl"}
     for i in S:
         c = C[i]["dprl_vs_dqn"]
         got = "dprl" if c["lo"] > 0 else ("dqn" if c["hi"] < 0 else "empate")
         out.append((got == wd[i], f"CEC {i}: dual × DQN plano = {got} (texto: {wd[i]})"))
-    wr = {"cb4wd": "dprl", "cb8wd": "dprl", "cb12wd": "empate", "cb20wd": "rollout", "cb30wd": "rollout"}
+    wr = {"cb4wd": "dprl", "cb8wd": "dprl", "cb12wd": "dprl", "cb20wd": "rollout", "cb30wd": "rollout"}
     for i in S:
         c = C[i]["dprl_vs_rollout"]
         got = "dprl" if c["lo"] > 0 else ("rollout" if c["hi"] < 0 else "empate")
@@ -1044,8 +1044,8 @@ def check_claims_cec(runs):
         b_ = bud.get(i, {}).get("budgets", {})
         out.append((all(x["vs_dqn_hi"] < 0 for x in b_.values()) and bool(b_), f"CEC {i}: o ES não alcança o DQN (500 mil) em nenhum orçamento até 32M (IC de ES − DQN exclui 0)"))
     b4 = bud.get("cb4wd", {}).get("budgets", {})
-    out.append(("32M" in b4 and b4["32M"]["vs_dqn_lo"] <= 0 <= b4["32M"]["vs_dqn_hi"] and b4["8M"]["vs_dqn_hi"] < 0 and bud["cb4wd"]["reached"] == "32M",
-                "CEC cb4wd: o IC de ES − DQN só inclui 0 em 32M (3 sementes, IC largo); em 8M ainda exclui"))
+    out.append(("32M" in b4 and bud["cb4wd"]["reached"] is None and all(x["vs_dqn_hi"] < 0 for x in b4.values()),
+                "CEC cb4wd: com 5 sementes o IC de ES − DQN exclui 0 em todos os orçamentos (o ES não alcança o DQN em 4 est. até 32M)"))
     hv = {"cb4wd": "empate", "cb12wd": "heur", "cb30wd": "empate"}
     for i in ("cb4wd", "cb12wd", "cb30wd"):
         x = bud.get(i, {}).get("budgets", {}).get("32M")
