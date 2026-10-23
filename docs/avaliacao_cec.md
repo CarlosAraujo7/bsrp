@@ -14,7 +14,7 @@ Escrita por quem desenvolveu o trabalho (viés a favor do projeto): o número é
 | Clareza e formato | 10% | 68 | formato IEEE correto (A4, 2 colunas, anônimo, fontes embutidas); texto escrito por IA, sem revisão humana; falta divulgação de IA |
 | Reprodutibilidade | 5% | 80 | tudo gerado dos logs; sem link por causa do duplo-anônimo |
 
-**Nota global estimada: ≈ 66–68/100 após o P13; ≈ 68–70/100 após o P14; ≈ 69–71/100 após o P15 (segundo algoritmo de neuroevolução)** (antes do P12 era ≈ 50). Faixa de decisão do CEC: abaixo de ~60 tende a rejeição, 60–72 é incerto (depende dos revisores),
+**Nota global estimada: ≈ 66–68/100 após o P13; ≈ 68–70/100 após o P14; ≈ 69–71/100 após o P15 (segundo algoritmo de neuroevolução); ≈ 70–72/100 após o P16 (sementes extras)** (antes do P12 era ≈ 50). Faixa de decisão do CEC: abaixo de ~60 tende a rejeição, 60–72 é incerto (depende dos revisores),
 acima de ~75 é aceitação provável. **Meta de "trabalho satisfatório": ≥ 75.**
 
 ## Fraquezas, em ordem de ganho esperado por custo
@@ -24,7 +24,7 @@ acima de ~75 é aceitação provável. **Meta de "trabalho satisfatório": ≥ 7
    algoritmo de neuroevolução (ES separável com covariância diagonal).
 2. **Validade externa: uma cidade** (ganho ~+4–5, custo médio, **exige permissão para baixar dados novos**). Uma segunda cidade com dados abertos (ex.: Capital Bikeshare, Washington) pelo mesmo pipeline.
 3. **Originalidade** (ganho ~+4, custo alto). Uma contribuição algorítmica mais forte que o valor congelado: p.ex. destilar o planejador no DQN (expert iteration com RHEA/rollout) ou treinar valor e busca juntos.
-4. **Poder estatístico** (ganho ~+2, custo médio): 5 sementes em 20/30 estações e 3 nos orçamentos longos do ES.
+4. **~~Poder estatístico~~ (feito no P16, 23/out: 10 sementes no DQN de 20/30 est. e no dual-policy; 5 nos orçamentos longos de neuroevolução; sobram o híbrido e os orçamentos de 2 M com 5)** (ganho ~+2, custo médio).
 5. **Clareza e divulgação de IA** (ganho ~+4, **só o usuário pode fazer**): revisão humana integral do texto, decisão sobre a divulgação de IA conforme a política do CEC.
 6. Roteamento com tempo de viagem e vários veículos: fora do escopo do prazo (fica em limitações).
 
