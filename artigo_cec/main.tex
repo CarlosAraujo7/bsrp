@@ -58,6 +58,10 @@ run logs.
 results~\cite{benchimol2011}, mixed-integer formulations~\cite{raviv2013,dellamico2014} and cluster-first heuristics~\cite{schuijbroek2017}. For the dynamic case,
 Ghosh \emph{et al.}~\cite{ghosh2017} optimize routes against expected future demand, and Brinkmann \emph{et al.}~\cite{brinkmann2015,brinkmann2019} study short-term
 strategies and dynamic lookahead policies.
+Evolutionary and related metaheuristics are common here, but mostly for the \emph{static} routing problem: a hybrid genetic algorithm for several bike
+types~\cite{li2016}, chemical reaction optimization~\cite{szeto2016} and an improved NSGA-II for free-floating systems~\cite{chen2022}. The closest to our setting is MOEA/D run
+under a rolling horizon for dynamic rebalancing~\cite{hu2021}, which optimizes routes against a cost--satisfaction trade-off from forecast demand, not a sequential policy under
+a stochastic demand model compared against learned policies.
 \textbf{RL.} Seo \emph{et al.}~\cite{seo2022} combine approximate dynamic programming and RL; Liang \emph{et al.}~\cite{liang2024} compare single- and dual-policy DQN
 (inventory and routing); Guo \emph{et al.}~\cite{guo2024} use combinatorial RL; Pan \emph{et al.}~\cite{pan2019} use deep RL for pricing in dockless systems.
 \textbf{Evolutionary methods.} Evolution strategies are a scalable alternative to policy-gradient and Q-learning methods~\cite{salimans2017}, genetic algorithms can train

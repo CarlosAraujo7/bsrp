@@ -834,6 +834,42 @@ def cec_es_config(runs, scales=SCALES):
     return out
 
 
+def cec_controls(runs, scales=SCALES, n=N_SUB, boot=4000, delta=0.5):
+    """P14 (DESVIOS.md 2026-10-23): controles SEM evolução. (a) RHEA × tiro aleatório com o mesmo número de avaliações (config S × RS, L × RL), pareado por cenário nos n primeiros cenários de
+    teste, IC95% bootstrap sobre cenários; positivo (reward) = RHEA melhor. (b) CMA-ES × busca aleatória (mesma caixa, mesmas avaliações), por execução (melhor família por validação em cada
+    execução), teste inteiro; Welch; positivo = CMA-ES melhor; 'equivalent' só se o IC95% couber em ±delta."""
+    out = {}
+    rng = np.random.default_rng(20261023)
+    for inst in scales:
+        rec = {"n_st": N_ST[inst]}
+        for cfg, ctl, key in (("S", "RS", "rhea_vs_rs_s"), ("L", "RL", "rhea_vs_rs_l")):
+            a, b = _episode_rows(Path(runs) / f"rhea_{inst}.jsonl", cfg), _episode_rows(Path(runs) / f"rhea_{inst}.jsonl", ctl)
+            if not (all(("test", k) in a and ("test", k) in b for k in range(n))):
+                continue
+            x = np.array([a[("test", k)] for k in range(n)], float)
+            y = np.array([b[("test", k)] for k in range(n)], float)
+            d = x - y
+            bm = d[rng.integers(0, n, size=(boot, n))].mean(axis=1)
+            lo, hi = np.percentile(bm, [2.5, 97.5])
+            rec[key] = {"rhea": -float(x.mean()), "control": -float(y.mean()), "delta": float(d.mean()), "lo": float(lo), "hi": float(hi)}
+        sel = {}
+        for tag in ("cmaes", "rsearch"):
+            by = {}
+            for r in rows_of(Path(runs) / f"{tag}_{inst}.jsonl"):
+                by.setdefault(r["seed"], {})[r["family"]] = r
+            sel[tag] = [max(d_.values(), key=lambda r: r["val_best"]) for d_ in by.values() if len(d_) == 2]
+        if len(sel["cmaes"]) >= 2 and len(sel["rsearch"]) >= 2:
+            tc = np.array([r["test_mean"] for r in sel["cmaes"]], float)
+            tr = np.array([r["test_mean"] for r in sel["rsearch"]], float)
+            dw, (lo, hi), _ = welch(tc, tr)
+            verdict = "better" if lo > 0 else ("worse" if hi < 0 else ("equivalent" if (lo > -delta and hi < delta) else "inconclusive"))
+            rec["cma_vs_random"] = {"cma": -float(tc.mean()), "random": -float(tr.mean()), "n_cma": len(tc), "n_random": len(tr), "delta": float(dw), "lo": float(lo), "hi": float(hi), "verdict": verdict,
+                                    "val_cma": -float(np.mean([r["val_best"] for r in sel["cmaes"]])), "val_random": -float(np.mean([r["val_best"] for r in sel["rsearch"]]))}
+        if len(rec) > 1:
+            out[inst] = rec
+    return out
+
+
 def cec_rhea_vs_rollout(runs, scales=SCALES, n=N_SUB, boot=4000):
     """P12c: RHEA − rollout (3, 64), pareado por cenário de teste (os n primeiros), IC95% bootstrap sobre cenários; positivo = RHEA melhor (reward)."""
     out = {}

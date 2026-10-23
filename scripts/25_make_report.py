@@ -810,6 +810,30 @@ def cec_hybrid_table(D, C, tdir):
     return mac
 
 
+def cec_controls_table(runs, tdir):
+    """P14: tabela 'a evolução importa?' (RHEA × tiro aleatório e CMA-ES × busca aleatória, mesmo orçamento) e macros."""
+    ctl = AN30.cec_controls(runs)
+    mac = {}
+    c1 = lambda x: "--" if x is None else f"{pt(x['delta'], 1)} [{pt(x['lo'], 1)}; {pt(x['hi'], 1)}]"
+    with open(tdir / "cec_controls.tex", "w", encoding="utf-8") as f:
+        f.write("\\begin{tabular}{lrrrl}\n\\toprule\nStations & RHEA-S$-$RS [95\\% CI] & RHEA-L$-$RL [95\\% CI] & CMA-ES$-$random [95\\% CI] & Reading \\\\\n\\midrule\n")
+        for inst, rec in ctl.items():
+            L = SCALE_LETTER[inst]
+            cv = rec.get("cma_vs_random")
+            for key, nm in (("rhea_vs_rs_s", "S"), ("rhea_vs_rs_l", "L")):
+                x = rec.get(key)
+                if x is not None:
+                    mac[f"cecCtl{nm}Delta{L}"], mac[f"cecCtl{nm}Lo{L}"], mac[f"cecCtl{nm}Hi{L}"] = pt(x["delta"], 1), pt(x["lo"], 1), pt(x["hi"], 1)
+                    mac[f"cecCtl{nm}Rhea{L}"], mac[f"cecCtl{nm}Ctl{L}"] = pt(x["rhea"], 1), pt(x["control"], 1)
+            if cv is not None:
+                mac[f"cecCtlCmaDelta{L}"], mac[f"cecCtlCmaLo{L}"], mac[f"cecCtlCmaHi{L}"] = pt(cv["delta"], 2), pt(cv["lo"], 2), pt(cv["hi"], 2)
+                mac[f"cecCtlCma{L}"], mac[f"cecCtlRand{L}"] = pt(cv["cma"], 2), pt(cv["random"], 2)
+            cm = "--" if cv is None else f"{pt(cv['delta'], 2)} [{pt(cv['lo'], 2)}; {pt(cv['hi'], 2)}]"
+            f.write(tex_num(f"{rec['n_st']} & {c1(rec.get('rhea_vs_rs_s'))} & {c1(rec.get('rhea_vs_rs_l'))} & {cm} & {'--' if cv is None else cv['verdict']} \\\\\n"))
+        f.write("\\bottomrule\n\\end{tabular}\n")
+    return mac
+
+
 def cec_evo_outputs(runs, tdir, root):
     """Resultados dos mÃ©todos evolutivos (P12b calibraÃ§Ã£o CMA-ES Ã— grade, P12c RHEA Ã— rollout, P12d curva de orÃ§amento do ES): macros, 3 tabelas e fig_cec_es_budget."""
     mac = {}
@@ -1095,6 +1119,7 @@ def write_cec(runs, root):
     mac["cecN"] = str(AN30.N_SUB)
     mac.update(cec_evo_outputs(runs, tdir, root))
     mac.update(cec_hybrid_table(D, C, tdir))
+    mac.update(cec_controls_table(runs, tdir))
     with open(OUT / "numeros_cec.tex", "w", encoding="utf-8") as f:
         f.write("% GERADO por scripts/25_make_report.py --lang en. Macros cecU/cecR/cecC: demanda perdida, redução (%) e contrastes por escala (A..E = 4, 8, 12, 20, 30 estações).\n")
         for k, v in mac.items():

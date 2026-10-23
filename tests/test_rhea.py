@@ -26,6 +26,35 @@ def episode_actions(pol, sc):
     return acts, env
 
 
+def _budget(cfg, elite=2):
+    """Avaliações de sequência por decisão: P + (G − 1)(P − elite) (como em RHEA.act)."""
+    return cfg["pop"] + (cfg["gens"] - 1) * (cfg["pop"] - elite)
+
+
+class TestControls(unittest.TestCase):
+    """P14a: o tiro aleatório (RS, RL) tem o MESMO número de avaliações de sequência, L e K que o RHEA (S, L): só a evolução muda."""
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("rhea34", ROOT / "scripts" / "34_rhea.py")
+        cls.M = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.M)
+
+    def test_same_evaluation_budget_horizon_and_futures(self):
+        C = self.M.CONFIGS
+        for evo, ctl in (("S", "RS"), ("L", "RL")):
+            self.assertEqual(_budget(C[evo]), _budget(C[ctl]))
+            self.assertEqual((C[evo]["L"], C[evo]["K"]), (C[ctl]["L"], C[ctl]["K"]))
+            self.assertEqual(C[ctl]["gens"], 1)
+
+    def test_random_shooting_counts_the_evaluations_it_claims(self):
+        calls = []
+        pol = RHEA(L=2, pop=11, gens=1, K=2, seed=1, value=lambda envs: (calls.append(len(envs)), np.zeros(len(envs)))[1])
+        pol.act(E.BSRPEnv(INST).reset(SC[0]))
+        self.assertEqual(len(calls), 11)
+
+
 class TestRHEA(unittest.TestCase):
     def test_only_valid_actions_and_full_episode(self):
         acts, env = episode_actions(RHEA(L=3, pop=6, gens=3, K=2, seed=1), SC[0])

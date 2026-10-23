@@ -35,6 +35,28 @@ class TestDecode(unittest.TestCase):
         self.assertAlmostEqual(p.hi, 0.5 + 0.05, places=3) if p.hi < 0.55 else None
 
 
+class TestRandomSearch(unittest.TestCase):
+    """P14b: controle do CMA-ES, mesma caixa e mesmo número de avaliações."""
+
+    def test_random_search_uses_exactly_the_budget_is_reproducible_and_inside_the_box(self):
+        env = E.BSRPEnv(INST)
+        val = E.sample_scenarios(INST, 10, np.random.default_rng(5))
+        a = C.run_random(env, val, "threshold", 2, 20)
+        b = C.run_random(env, val, "threshold", 2, 20)
+        self.assertEqual(a[3], 20)
+        self.assertEqual(a[2], b[2])
+        np.testing.assert_array_equal(a[0], b[0])
+        t, lo, hi, d, w = a[1].p
+        self.assertTrue(0.3 <= t <= 0.7 and 0.05 <= lo < hi <= 0.99 and d in (5, 10) and 0.0 <= w <= 0.5)
+        self.assertEqual(a[4][-1][0], 20)                                                   # a curva termina na última avaliação
+        self.assertTrue(all(c2[1] >= c1[1] for c1, c2 in zip(a[4], a[4][1:])))              # melhor-até-agora nunca piora (reward)
+
+    def test_different_seed_gives_a_different_search(self):
+        env = E.BSRPEnv(INST)
+        val = E.sample_scenarios(INST, 10, np.random.default_rng(5))
+        self.assertFalse(np.array_equal(C.run_random(env, val, "greedy", 1, 12)[0], C.run_random(env, val, "greedy", 2, 12)[0]))
+
+
 class TestRun(unittest.TestCase):
     def test_cma_run_is_reproducible_and_not_worse_than_its_first_generation(self):
         env = E.BSRPEnv(INST)

@@ -465,6 +465,27 @@ class TestCecData(unittest.TestCase):
         self.assertNotIn("rhea_s_v", P8.cec_data(self.tmp, scales=("cb30wd",), n=300)["cb30wd"])   # < 2 sementes completas
         self.assertEqual(P8.cec_agent_check(self.tmp, scales=("cb30wd",))["cb30wd"], {"n": 3, "n_match": 3, "n_orig": 3})
 
+    def test_controls_rhea_vs_random_shooting_and_cma_vs_random_search(self):
+        t = self.tmp
+        inst = "cb30wd"
+        rows = [{"instance": inst, "config": "S", "set": "test", "idx": k, "reward": -310.0} for k in range(300)]
+        rows += [{"instance": inst, "config": "RS", "set": "test", "idx": k, "reward": -316.0 + (k % 3)} for k in range(300)]      # controle pior em ~5
+        dump(t / f"rhea_{inst}.jsonl", rows)
+        rs, cm = [], []
+        for sd in range(4):
+            for fam in ("greedy", "threshold"):
+                cm.append({"instance": inst, "family": fam, "seed": sd, "val_best": -375.0 - (fam == "threshold"), "test_mean": -378.0 + 0.1 * sd})
+                rs.append({"instance": inst, "family": fam, "seed": sd, "val_best": -380.0, "test_mean": -383.0 + 0.1 * sd})
+        dump(t / f"cmaes_{inst}.jsonl", cm)
+        dump(t / f"rsearch_{inst}.jsonl", rs)
+        c = P8.cec_controls(t, scales=(inst,), n=300)[inst]
+        self.assertAlmostEqual(c["rhea_vs_rs_s"]["delta"], 5.0, delta=1.5)                                   # RHEA melhor que o tiro aleatório em ~5
+        self.assertGreater(c["rhea_vs_rs_s"]["lo"], 0)
+        self.assertNotIn("rhea_vs_rs_l", c)                                                                  # sem linhas L/RL
+        self.assertAlmostEqual(c["cma_vs_random"]["delta"], 5.0, places=6)
+        self.assertEqual(c["cma_vs_random"]["verdict"], "better")
+        self.assertEqual((c["cma_vs_random"]["n_cma"], c["cma_vs_random"]["n_random"]), (4, 4))
+
     def test_rhea_vs_rollout_paired_bootstrap(self):
         r = P8.cec_rhea_vs_rollout(self.tmp, scales=("cb30wd",), n=300)["cb30wd"]
         self.assertAlmostEqual(r["rollout"], 300.0)

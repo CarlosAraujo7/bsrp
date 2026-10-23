@@ -6,6 +6,8 @@
 Para cada (instância, família, semente): CMA-ES (λ padrão, σ0 = 1 no espaço logit, x0 = centro da caixa) minimiza a demanda perdida média nos cenários de VALIDAÇÃO
 (fixos: números aleatórios comuns ⇒ fitness determinístico), com `--evals` avaliações; a melhor solução por validação é avaliada UMA vez no teste e nos dias reais.
 Uma linha por execução em runs/cmaes_<inst>.jsonl (retomável; fatias em paralelo). A unidade de análise é a execução (semente) do CMA-ES.
+
+`--search random` (P14b, DESVIOS.md 2026-10-23): controle com busca ALEATÓRIA na mesma caixa e com o mesmo número de avaliações; grava runs/rsearch_<inst>.jsonl.
 """
 import os
 for _v in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
@@ -69,6 +71,22 @@ def run_cma(env, val, family, seed, evals):
     return best_x, decode(family, best_x), -best_f, n, curve
 
 
+def run_random(env, val, family, seed, evals):
+    """Controle do CMA-ES (P14b): busca ALEATÓRIA com o mesmo número de avaliações na mesma caixa (u ~ U(0,1)^k, x = logit(u), logo a decodificação é a mesma);
+    devolve (x_melhor, política_melhor, val_melhor (reward), n_avaliações, curva [(avaliações, melhor val)] a cada 10 avaliações)."""
+    rng = np.random.default_rng(np.random.SeedSequence([20261023, seed, DIM[family]]))
+    best_x, best_f, curve = None, np.inf, []
+    for n in range(1, evals + 1):
+        u = rng.uniform(1e-6, 1 - 1e-6, DIM[family])
+        x = np.log(u / (1.0 - u))
+        f = -float(E.evaluate(env, decode(family, x), val).mean())
+        if f < best_f:
+            best_f, best_x = f, x
+        if n % 10 == 0 or n == evals:
+            curve.append((n, -best_f))
+    return best_x, decode(family, best_x), -best_f, evals, curve
+
+
 def done_keys(path):
     if not Path(path).exists():
         return set()
@@ -83,19 +101,20 @@ def main():
     ap.add_argument("--seeds", type=int, nargs="+", default=list(range(10)))
     ap.add_argument("--evals", type=int, default=200)
     ap.add_argument("--shard", default="0/1")
+    ap.add_argument("--search", choices=["cma", "random"], default="cma", help="random: controle do P14b (runs/rsearch_<inst>.jsonl)")
     a = ap.parse_args()
     si, sn = map(int, a.shard.split("/"))
     inst, sc = RP.get_bundle(a.instance)
     env = E.BSRPEnv(inst)
-    out = ROOT / "runs" / f"cmaes_{inst.name}.jsonl"
+    out = ROOT / "runs" / (f"cmaes_{inst.name}.jsonl" if a.search == "cma" else f"rsearch_{inst.name}.jsonl")
     done = done_keys(out)
     jobs = [(f, s) for f in a.families for s in a.seeds]
     mine = [j for i, j in enumerate(jobs) if i % sn == si and j not in done]
-    print(f"[{inst.name}] CMA-ES {a.evals} avaliações; fatia {si}/{sn}: {len(mine)} de {len(jobs)} execuções", flush=True)
+    print(f"[{inst.name}] {'CMA-ES' if a.search == 'cma' else 'busca aleatória'} {a.evals} avaliações; fatia {si}/{sn}: {len(mine)} de {len(jobs)} execuções", flush=True)
     git, dirty = RP.git_state()
     for fam, seed in mine:
         t0 = time.time()
-        x, pol, val, n, curve = run_cma(env, sc["val"], fam, seed, a.evals)
+        x, pol, val, n, curve = (run_cma if a.search == "cma" else run_random)(env, sc["val"], fam, seed, a.evals)
         r = E.evaluate(env, pol, sc["test"])
         rec = {"instance": inst.name, "family": fam, "seed": seed, "evals": n, "policy": pol.name, "x": [float(v) for v in x], "val_best": float(val),
                "test_mean": float(r.mean()), "test_rewards": r.round(1).tolist(), "curve": [(int(k), float(v)) for k, v in curve],

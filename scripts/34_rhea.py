@@ -3,7 +3,7 @@
 
   python scripts/34_rhea.py --instance cb12wd --config S --n-test 300 --shard 0/8
 
-Duas configurações FIXAS e sem ajuste: S (L = 4, P = 16, G = 10, K = 8; custo por decisão ≈ o do rollout (3, 64)) e L (L = 4, P = 24, G = 15, K = 16; ≈ 4,5× o custo de S).
+(Também as configurações de controle RS e RL, tiro aleatório com o mesmo orçamento de avaliações de S e L: P14a.) Duas configurações FIXAS e sem ajuste: S (L = 4, P = 16, G = 10, K = 8) e L (L = 4, P = 24, G = 15, K = 16; ≈ 4,5× o custo de S); o custo por decisão em passos de modelo está em scripts/35_cost_steps.py.
 Cada episódio é um job (conjunto, índice) com semente derivada de (conjunto, índice, config), então o resultado não depende do fatiamento. Uma linha por episódio em
 runs/rhea_<inst>.jsonl (retomável; fatias em paralelo).
 """
@@ -29,7 +29,10 @@ _spec = importlib.util.spec_from_file_location("runproto", ROOT / "scripts" / "1
 RP = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(RP)
 
-CONFIGS = {"S": dict(L=4, pop=16, gens=10, K=8), "L": dict(L=4, pop=24, gens=15, K=16)}
+CONFIGS = {"S": dict(L=4, pop=16, gens=10, K=8), "L": dict(L=4, pop=24, gens=15, K=16),
+           # P14a (DESVIOS.md 2026-10-23): controle SEM evolução = tiro aleatório com o MESMO número de avaliações de sequência do RHEA (P + (G − 1)(P − elite): 142 em S, 332 em L),
+           # mesmo L, K e shift buffer; uma única geração de genomas aleatórios e fica o melhor
+           "RS": dict(L=4, pop=142, gens=1, K=8), "RL": dict(L=4, pop=332, gens=1, K=16)}
 SALT = 20261022
 SETS = {"test": 2, "real_test": 3}
 
