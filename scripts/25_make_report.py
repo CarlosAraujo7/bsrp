@@ -797,7 +797,7 @@ def cec_hybrid_table(D, C, tdir):
                 cd, cb, cr = c.get(f"{nm}_vs_dqnsame"), c.get(f"{nm}_vs_{base}"), c.get(f"{nm}_vs_rollout")
                 k = CEC_KEY[nm]
                 if cd is not None:
-                    mac[f"cecHyb{cfg}Dqn{L}"], mac[f"cecHyb{cfg}Delta{L}"], mac[f"cecHyb{cfg}Lo{L}"], mac[f"cecHyb{cfg}Hi{L}"] = pt(-cd["dqn"], 1), pt(cd["delta"], 1), pt(cd["lo"], 1), pt(cd["hi"], 1)
+                    mac[f"cecHyb{cfg}Dqn{L}"], mac[f"cecHyb{cfg}Delta{L}"], mac[f"cecHyb{cfg}Lo{L}"], mac[f"cecHyb{cfg}Hi{L}"] = pt(cd["dqn"], 1), pt(cd["delta"], 1), pt(cd["lo"], 1), pt(cd["hi"], 1)
                 if cb is not None:
                     mac[f"cecHyb{cfg}VsRhea{L}"], mac[f"cecHyb{cfg}VsRheaLo{L}"], mac[f"cecHyb{cfg}VsRheaHi{L}"] = pt(cb["delta"], 1), pt(cb["lo"], 1), pt(cb["hi"], 1)
                 if cr is not None:
@@ -1027,6 +1027,21 @@ def check_claims_cec(runs):
         c = C[i].get("dqn2m_vs_rhea_l")
         got = None if c is None else ("dqn2m" if c["lo"] > 0 else ("rhea" if c["hi"] < 0 else "empate"))
         out.append((got == wl[i], f"CEC {i}: DQN 4× × RHEA-L = {got} (texto: {wl[i]})"))
+    # P13: RHEA com valor terminal do DQN (leituras pré-fixadas: IC95% t > 0 → híbrido melhor; < 0 → pior; senão sem diferença detectada)
+    def verdict(c, pos="hybrid", neg="other"):
+        return None if c is None else (pos if c["lo"] > 0 else (neg if c["hi"] < 0 else "tie"))
+    hyb = {("S", "dqnsame"): {"cb4wd": "tie", "cb8wd": "tie", "cb12wd": "tie", "cb20wd": "other", "cb30wd": "other"},
+           ("L", "dqnsame"): {"cb12wd": "hybrid", "cb30wd": "hybrid"},
+           ("S", "base"): {"cb4wd": "hybrid", "cb8wd": "hybrid", "cb12wd": "hybrid", "cb20wd": "hybrid", "cb30wd": "tie"},
+           ("L", "base"): {"cb12wd": "hybrid", "cb30wd": "tie"},
+           ("S", "rollout"): {"cb4wd": "hybrid", "cb8wd": "other", "cb12wd": "other", "cb20wd": "other", "cb30wd": "other"},
+           ("L", "rollout"): {"cb12wd": "tie", "cb30wd": "other"}}
+    for (cfg, ref), want in hyb.items():
+        nm = {"S": "rhea_s_v", "L": "rhea_l_v"}[cfg]
+        for i, w in want.items():
+            key = {"dqnsame": "dqnsame", "base": {"S": "rhea_s", "L": "rhea_l"}[cfg], "rollout": "rollout"}[ref]
+            got = verdict(C.get(i, {}).get(f"{nm}_vs_{key}"))
+            out.append((got == w, f"CEC {i}: RHEA-{cfg}+V × {ref if ref != 'base' else 'RHEA-' + cfg + ' sem valor'} = {got} (texto: {w})"))
     for inst, c in AN30.cec_agent_check(runs).items():
         out.append((c["n_match"] == c["n"] == c["n_orig"], f"CEC {inst}: os DQN retreinados (pesos salvos) reproduzem a tabela principal ({c['n_match']}/{c['n']} sementes idênticas)"))
     cv = AN30.cec_curves(runs)
