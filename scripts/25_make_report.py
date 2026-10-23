@@ -1069,6 +1069,31 @@ def check_claims_cec(runs):
         c = C[i].get("dqn2m_vs_rhea_l")
         got = None if c is None else ("dqn2m" if c["lo"] > 0 else ("rhea" if c["hi"] < 0 else "empate"))
         out.append((got == wl[i], f"CEC {i}: DQN 4× × RHEA-L = {got} (texto: {wl[i]})"))
+    # P15: sep-CMA-ES (segundo algoritmo de neuroevolução)
+    sb = AN30.cec_sep_budget(runs)
+    for i in S:
+        c = C[i]
+        out.append((c["sepcma_vs_es"]["lo"] > 0, f"CEC {i}: o sep-CMA-ES supera o OpenAI-ES com 500 mil passos (IC de Welch exclui 0)"))
+        out.append((c["sepcma_vs_dqn"]["hi"] < 0 and c["sepcma2m_vs_dqn2m"]["hi"] < 0, f"CEC {i}: o sep-CMA-ES fica atrás do DQN com 500 mil e com 2 M passos (IC exclui 0)"))
+    vh = {"cb4wd": "tie", "cb8wd": "worse", "cb12wd": "worse", "cb20wd": "tie", "cb30wd": "worse"}
+    for i, w in vh.items():
+        c = C[i]["sepcma_vs_heur"]
+        got = "better" if c["lo"] > 0 else ("worse" if c["hi"] < 0 else "tie")
+        out.append((got == w, f"CEC {i}: sep-CMA-ES (500 mil) × referência = {got} (texto: {w})"))
+    vh2 = {"cb4wd": "better", "cb8wd": "worse", "cb12wd": "worse", "cb20wd": "tie", "cb30wd": "tie"}
+    for i, w in vh2.items():
+        c = C[i]["sepcma2m_vs_heur"]
+        got = "better" if c["lo"] > 0 else ("worse" if c["hi"] < 0 else "tie")
+        out.append((got == w, f"CEC {i}: sep-CMA-ES (2 M) × referência = {got} (texto: {w})"))
+    for i in ("cb4wd", "cb12wd", "cb30wd"):
+        b_ = sb.get(i, {}).get("budgets", {})
+        out.append((all(k in b_ for k in ("500k", "2M", "8M", "32M")) and all(x["vs_dqn_hi"] < 0 for x in b_.values()) and sb[i]["reached"] is None,
+                    f"CEC {i}: o sep-CMA-ES não alcança o DQN em nenhum orçamento até 32M (IC de Welch exclui 0)"))
+    v32 = {"cb4wd": "better", "cb12wd": "worse", "cb30wd": "tie"}
+    for i, w in v32.items():
+        x = sb.get(i, {}).get("budgets", {}).get("32M")
+        got = None if x is None else ("better" if x["vs_heur_lo"] > 0 else ("worse" if x["vs_heur_hi"] < 0 else "tie"))
+        out.append((got == w, f"CEC {i}: sep-CMA-ES (32M) × referência = {got} (texto: {w})"))
     # P14: controles sem evolução (RHEA × tiro aleatório; CMA-ES × busca aleatória)
     ctl = AN30.cec_controls(runs)
     want_s = {"cb4wd": "tie", "cb8wd": "tie", "cb12wd": "evo", "cb20wd": "evo", "cb30wd": "evo"}

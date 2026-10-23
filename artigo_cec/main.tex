@@ -25,8 +25,8 @@ Dynamic bike repositioning is a stochastic sequential decision problem usually a
 (EC) offers alternatives that are rarely compared with them under one protocol. On Citi Bike instances with 4 to 30 stations and 24 real days, we compare calibrated
 heuristics, a DQN, a dual-policy DQN, a Monte Carlo rollout and three EC methods: CMA-ES calibration of the heuristics, OpenAI-ES neuroevolution of the DQN's network and
 a rolling horizon evolutionary algorithm (RHEA). Training seeds are the unit of analysis, hyperparameters are chosen on validation only, budgets are counted in simulator
-steps, and every number is generated from run logs. CMA-ES matches grid-calibrated heuristics (differences below 1\%), but so does random search with the same number of evaluations. Neuroevolution is the weakest method at every scale:
-even with 64$\times$ the DQN's simulator steps it never reaches the DQN and, within the noise of 3 seeds, only approaches the heuristic. A larger RHEA beats the
+steps, and every number is generated from run logs. CMA-ES matches grid-calibrated heuristics (differences below 1\%), but so does random search with the same number of evaluations. Neuroevolution of the weights (OpenAI-ES and sep-CMA-ES) is the weakest family at every scale:
+even with 64$\times$ the DQN's simulator steps neither reaches the DQN, and at best they pass the heuristic at small scale. A larger RHEA beats the
 500k-step DQN at every scale and the rollout at 4 stations, but falls behind the rollout as stations grow. Adding the frozen DQN's value at the end of each evolved plan
 makes RHEA match the DQN at small scales and, with a larger search, beat the DQN it bootstraps from at 12 and 30 stations and tie the rollout at 12. Controls without evolution show that the evolutionary operators matter for the planner from 12 stations on, not for the calibration. The DQN cuts unmet demand by \cecRDqnA\% at 4 stations but
 only \cecRDqnE\% at 30, and planners that query the demand model overtake it from 12 stations on. We report negative results and the study's limits.
@@ -67,7 +67,7 @@ a stochastic demand model compared against learned policies.
 \textbf{Evolutionary methods.} Evolution strategies are a scalable alternative to policy-gradient and Q-learning methods~\cite{salimans2017}, genetic algorithms can train
 deep policies~\cite{such2017}, and the field is surveyed in~\cite{bai2023}. Hybrids couple evolution with gradient-based RL, as in ERL~\cite{khadka2018} and CEM-RL~\cite{pourchot2019}, which train populations and learners jointly; our hybrid
 is simpler (a frozen DQN value at the end of an evolved plan). CMA-ES~\cite{hansen2001,hansen2016} is a standard derivative-free optimizer for
-low-dimensional parameters, and RHEA~\cite{perezliebana2013} evolves action sequences online against a forward model. To our knowledge these families have not been
+low-dimensional parameters (its separable variant~\cite{ros2008} scales to many weights), and RHEA~\cite{perezliebana2013} evolves action sequences online against a forward model. To our knowledge these families have not been
 compared with RL and Monte Carlo planning on bike repositioning under a common budget and statistical protocol; we do not reproduce the cited systems (simulators, data
 and metrics differ) and our DPRL-style agent is an adaptation.
 
@@ -88,9 +88,11 @@ validation scenarios; each run's best-on-validation point is tested once.
 \textbf{DQN.} A $64$--$64$ network with action masking, replay, target network and Double DQN~\cite{mnih2015,vanhasselt2016}.
 \textbf{Dual policy.} An adaptation of DPRL~\cite{liang2024}: two DQNs with shared state, one choosing the stock change (no time elapses) and one choosing the destination
 in the post-inventory state; heads have 5 and $n$ outputs instead of $5n$. It uses the flat DQN's hyperparameters, untuned.
-\textbf{ES (neuroevolution).} An OpenAI-style evolution strategy~\cite{salimans2017} on the \emph{same} $64$--$64$ network: antithetic sampling, centered ranks,
+\textbf{ES (neuroevolution).} Two algorithms evolve the weights of the \emph{same} $64$--$64$ network. An OpenAI-style evolution strategy~\cite{salimans2017} on the \emph{same} $64$--$64$ network: antithetic sampling, centered ranks,
 Adam, and the same scenarios for all members of a generation (common random numbers). The configuration chosen on validation had population \cecEsPopMax\ at every
 scale, $\sigma$ from \cecEsSigMin\ to \cecEsSigMax, learning rate \cecEsLrMin--\cecEsLrMax\ and \cecEsBsMin--\cecEsBsMax\ scenarios per generation.
+The second is sep-CMA-ES~\cite{ros2008}, CMA-ES with a diagonal covariance (linear cost in the number of weights): $\lambda$ candidates per generation on the same
+scenarios, the final policy is the mean of the distribution; its population size, initial step and scenarios per generation come from the same 16-configuration pool protocol.
 \textbf{Rollout.} For every valid action, the return of executing it and then following the base heuristic for $h$ decisions, averaged over $K$ futures sampled from the
 \emph{model}~\cite{bertsekas1997}; $(h,K)=(3,64)$; the base heuristic is the best grid-calibrated one on validation.
 \textbf{RHEA.} At each decision, a population of 4-action sequences is evolved (tournament selection, uniform crossover, per-gene mutation, elitism, shift buffer) against $K$
@@ -173,8 +175,8 @@ per-step credit assignment and so needs many more episodes, and that an argmax p
 
 \begin{figure*}[t]
 \centering\includegraphics[width=0.85\textwidth]{fig_cec_es_budget}
-\caption{OpenAI-ES on the DQN's network: unmet demand versus simulator steps (mean$\pm$95\% CI over seeds; 10 seeds at 500k, 5 at 2M, 3 at 8M and 32M), against the
-DQN at 500k steps and the reference heuristic.}
+\caption{Neuroevolution of the DQN's network (OpenAI-ES and sep-CMA-ES): unmet demand versus simulator steps (mean$\pm$95\% CI over seeds; 10 seeds at 500k, 5 at 2M, 3 at 8M and
+32M; sep-CMA-ES offset slightly to the right), against the DQN at 500k steps and the reference heuristic.}
 \label{fig:esbudget}
 \end{figure*}
 
@@ -184,6 +186,16 @@ DQN at 500k steps and the reference heuristic.}
 separate set of runs with its own evaluation points).}
 \label{fig:curves}
 \end{figure*}
+
+\textbf{A second neuroevolution algorithm.} The weakness of OpenAI-ES might be specific to the algorithm, so the same network was evolved with sep-CMA-ES (500k and 2M steps with 10 and 5 seeds). It is better than
+OpenAI-ES at every scale (advantage \cecCSepVsEsA, \cecCSepVsEsB, \cecCSepVsEsC, \cecCSepVsEsD\ and \cecCSepVsEsE\ at 4, 8, 12, 20 and 30 stations; CIs exclude 0), but it is
+level with the reference heuristic only at 4 and 20 stations (\cecCSepVsRefA\ [\cecCSepVsRefLoA; \cecCSepVsRefHiA] and \cecCSepVsRefD\ [\cecCSepVsRefLoD; \cecCSepVsRefHiD]), worse
+at 8, 12 and 30, and far behind the DQN at every scale (\cecCSepVsDqnA\ at 4 to \cecCSepVsDqnD\ at 20 stations). With four times the steps it beats the heuristic at 4 stations
+(\cecCSepXVsRefA\ [\cecCSepXVsRefLoA; \cecCSepXVsRefHiA]) and remains behind the 4$\times$-budget DQN at all scales. Extended to 8M and 32M steps (3 seeds, as for OpenAI-ES), it beats the
+heuristic at 4 stations (advantage \cecSBudThirtytwoHA\ [\cecSBudThirtytwoHLoA; \cecSBudThirtytwoHHiA] at 32M), is still worse at 12 (\cecSBudThirtytwoHC\ [\cecSBudThirtytwoHLoC;
+\cecSBudThirtytwoHHiC]) and cannot be distinguished from it at 30 (\cecSBudThirtytwoHE\ [\cecSBudThirtytwoHLoE; \cecSBudThirtytwoHHiE]), and it never reaches the DQN: its advantage over the DQN at 32M
+is \cecSBudThirtytwoVsA\ [\cecSBudThirtytwoVsLoA; \cecSBudThirtytwoVsHiA] at 4, \cecSBudThirtytwoVsC\ [\cecSBudThirtytwoVsLoC; \cecSBudThirtytwoVsHiC] at 12 and \cecSBudThirtytwoVsE\ [\cecSBudThirtytwoVsLoE;
+\cecSBudThirtytwoVsHiE] at 30 stations (Fig.~\ref{fig:esbudget}).
 
 \subsection{Evolutionary online planning}
 Table~\ref{tab:rhea} compares RHEA with the rollout on the same \cecN\ scenarios. The larger configuration, RHEA-L, uses fewer unmet rentals/returns than the rollout at 4
@@ -271,8 +283,8 @@ search, but also as good as random search with the same number of evaluations: t
 RHEA-L has lower unmet demand than the 500k-step DQN at every scale. But a fixed population faces a search space that grows as $(5n)^L$, whereas the rollout, which
 enumerates the first actions and relies on a calibrated base heuristic, was better in the regime we tested (12--30 stations); we did not isolate which of these two
 features matters. A frozen DQN value helps the search only where the DQN is already good: at 4--12 stations it brings RHEA to the DQN's level and, with a larger search, above it,
-whereas at 20 and 30 stations the search on top of a weak value is no better, or worse, than the DQN alone. Weight-space neuroevolution is by far the
-most sample-hungry: at 64$\times$ the DQN's budget it at best approaches the heuristic.
+whereas at 20 and 30 stations the search on top of a weak value is no better, or worse, than the DQN alone. Weight-space neuroevolution (two algorithms) is by far the
+most sample-hungry: at 64$\times$ the DQN's budget OpenAI-ES at best approaches the heuristic and sep-CMA-ES passes it only at the smallest scale, and neither reaches the DQN.
 \textbf{Practical reading.} With a demand model at decision time and latency of \cecMsRollA\ ms (rollout, 4 stations) to \cecMsRollE\ ms (rollout, 30 stations)
 per decision in our Python implementation (shared CPU), model-based planners are at least as good as every learner from 12 stations on; where decisions must take microseconds or no model exists, a
 DQN (the dual-policy variant at 8--20 stations) is the practical choice; neuroevolution of network weights is not competitive at these budgets.
@@ -287,7 +299,7 @@ choices made after seeing results (e.g., the reference-heuristic rule) are logge
 
 \section{Conclusion}
 Under one protocol, evolution was useful where the search space is small or a model is available and not where it must learn a policy from scratch from sampled returns:
-CMA-ES calibration matched grid search (and random search), RHEA was competitive as an online planner, and OpenAI-ES neuroevolution of the DQN's network was not competitive even with 64
+CMA-ES calibration matched grid search (and random search), RHEA was competitive as an online planner, and neuroevolution of the DQN's network (OpenAI-ES and sep-CMA-ES) was not competitive even with 64
 times the simulator steps. Reinforcement learning's margin over calibrated heuristics shrank from \cecRDqnA\% at 4 stations to \cecRDqnE\% at 30, and planners that query the
 true demand model were at least as good as any learner from 12 stations on, at a per-decision cost of the order of $10^{\latOrderC}$ times a trained network's. A frozen DQN value made RHEA a DQN-level planner and, with a larger search, better than the DQN at 12 and 30 stations, but not better than the rollout. The main limits are a
 single city, a single vehicle without routing time, and untuned dual-policy and RHEA configurations. Future work includes tuning RHEA and ES for each scale, hybrids that train the value and the search jointly, learning
